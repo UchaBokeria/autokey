@@ -11,6 +11,11 @@ import (
 	"github.com/uchabokeria/autokey/internal/ui"
 )
 
+var serviceCmd = &cobra.Command{
+	Use:   "service",
+	Short: "systemd user service (opt-in daemon)",
+}
+
 var serviceInstallRealCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install and enable systemd --user unit (opt-in)",
@@ -91,8 +96,6 @@ var serviceLogsRealCmd = &cobra.Command{
 
 func init() {
 	serviceLogsRealCmd.Flags().IntP("lines", "n", 50, "lines to show")
-	serviceInstallCmd.RunE = serviceInstallRealCmd.RunE
-	serviceUninstallCmd.RunE = serviceUninstallRealCmd.RunE
-	serviceStatusCmd.RunE = serviceStatusRealCmd.RunE
-	serviceLogsCmd.RunE = serviceLogsRealCmd.RunE
+	serviceCmd.AddCommand(serviceInstallRealCmd, serviceUninstallRealCmd, serviceStatusRealCmd, serviceLogsRealCmd)
+	rootCmd.AddCommand(serviceCmd)
 }

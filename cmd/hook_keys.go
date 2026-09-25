@@ -275,43 +275,6 @@ var workerStatusCmd = &cobra.Command{
 	},
 }
 
-var serviceCmd = &cobra.Command{
-	Use:   "service",
-	Short: "systemd user service (opt-in daemon)",
-}
-
-var serviceInstallCmd = &cobra.Command{
-	Use:   "install",
-	Short: "Install and enable systemd --user unit",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("service install: pending setup implementation")
-	},
-}
-
-var serviceUninstallCmd = &cobra.Command{
-	Use:   "uninstall",
-	Short: "Disable and remove the unit",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("service uninstall: pending setup implementation")
-	},
-}
-
-var serviceStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show service status",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("service status: pending setup implementation")
-	},
-}
-
-var serviceLogsCmd = &cobra.Command{
-	Use:   "logs",
-	Short: "Tail service logs",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("service logs: pending setup implementation")
-	},
-}
-
 func init() {
 	hookServeCmd.Flags().StringVar(&hookBind, "bind", "", "bind address (default config)")
 	hookServeCmd.Flags().IntVar(&hookPort, "port", 0, "port (default config)")
@@ -336,7 +299,4 @@ func init() {
 	workerDeployCmd.Flags().String("fallback", "", "fallback forward address (Gmail)")
 	workerCmd.AddCommand(workerDeployCmd, workerStatusCmd)
 	rootCmd.AddCommand(workerCmd)
-
-	serviceCmd.AddCommand(serviceInstallCmd, serviceUninstallCmd, serviceStatusCmd, serviceLogsCmd)
-	rootCmd.AddCommand(serviceCmd)
 }
