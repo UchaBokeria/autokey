@@ -1,0 +1,7 @@
+.autoApiKeys/
+*.db
+*.env
+secrets.env
+logs/
+dist/
+/tmp/
