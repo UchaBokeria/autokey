@@ -3,12 +3,14 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/uchabokeria/autokey/internal/flow"
 	"github.com/uchabokeria/autokey/internal/hook"
-	"github.com/uchabokeria/autokey/internal/pool"
+	"github.com/uchabokeria/autokey/internal/mail"
 	"github.com/uchabokeria/autokey/internal/ui"
+	"github.com/uchabokeria/autokey/internal/worker"
 )
 
 var hookCmd = &cobra.Command{
@@ -108,6 +110,12 @@ var inboxCmd = &cobra.Command{
 
 var inboxLimit int
 
+var (
+	watchAddr   string
+	watchOnce   bool
+	watchPeriod int
+)
+
 var inboxListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List recent inbound emails",
@@ -134,9 +142,51 @@ var inboxListCmd = &cobra.Command{
 
 var inboxWatchCmd = &cobra.Command{
 	Use:   "watch",
-	Short: "Watch inbound email for one address (Gmail fallback poll)",
+	Short: "Poll Gmail fallback inbox (IMAP) for new mail",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("gmail fallback poller: not wired yet (spec §18 open: IMAP vs OAuth)")
+		a, err := loadApp()
+		if err != nil {
+			return err
+		}
+		defer a.close()
+		sec := secretsFromFile(a.paths.Secrets)
+		cfg := mail.PollConfig{
+			Username: watchAddr,
+			Password: sec["GMAIL_APP_PASSWORD"],
+		}
+		if cfg.Username == "" {
+			cfg.Username = sec["GMAIL_ADDRESS"]
+		}
+		if cfg.Username == "" || cfg.Password == "" {
+			return fmt.Errorf("need Gmail address (--addr or GMAIL_ADDRESS) + GMAIL_APP_PASSWORD in secrets.env")
+		}
+		if watchOnce {
+			n, err := mail.PollOnce(a.ctx, a.sqldb, cfg)
+			if err != nil {
+				return err
+			}
+			ui.Ok("stored %d new messages", n)
+			return nil
+		}
+		if watchPeriod <= 0 {
+			watchPeriod = a.cfg.Poller.Interval
+		}
+		ui.Info("polling %s every %ds (Ctrl-C to stop)", cfg.Username, watchPeriod)
+		t := time.NewTicker(time.Duration(watchPeriod) * time.Second)
+		defer t.Stop()
+		for {
+			n, err := mail.PollOnce(a.ctx, a.sqldb, cfg)
+			if err != nil {
+				ui.Warn("poll: %v", err)
+			} else if n > 0 {
+				ui.Ok("stored %d new messages", n)
+			}
+			select {
+			case <-a.ctx.Done():
+				return nil
+			case <-t.C:
+			}
+		}
 	},
 }
 
@@ -147,17 +197,81 @@ var workerCmd = &cobra.Command{
 
 var workerDeployCmd = &cobra.Command{
 	Use:   "deploy",
-	Short: "Deploy the catch-all inbox worker",
+	Short: "Enable routing DNS, upload inbox worker, set catch-all",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("worker deploy: Cloudflare REST wiring pending (template embedded)")
+		a, err := loadApp()
+		if err != nil {
+			return err
+		}
+		defer a.close()
+		sec := secretsFromFile(a.paths.Secrets)
+		token := sec["CF_API_TOKEN"]
+		if token == "" {
+			return fmt.Errorf("CF_API_TOKEN missing in secrets.env (run autokey setup)")
+		}
+		accountID, _ := cmd.Flags().GetString("account")
+		if accountID == "" {
+			accountID = sec["CF_ACCOUNT_ID"]
+		}
+		if accountID == "" {
+			return fmt.Errorf("need --account or CF_ACCOUNT_ID in secrets.env")
+		}
+		inboxURL, _ := cmd.Flags().GetString("inbox-url")
+		if inboxURL == "" {
+			inboxURL = fmt.Sprintf("http://%s:%d/v1/inbox", a.cfg.Hook.Bind, a.cfg.Hook.Port)
+		}
+		fallback, _ := cmd.Flags().GetString("fallback")
+		bearer := sec["HOOK_BEARER"]
+		if bearer == "" {
+			return fmt.Errorf("HOOK_BEARER missing in secrets.env")
+		}
+		deps := worker.New(token, accountID, a.cfg.Cloudflare.ZoneID, a.cfg.Cloudflare.WorkerName)
+		if dryRun {
+			ui.Info("dry-run: would upload %s, enable DNS, set catch-all", deps.ScriptName)
+			return nil
+		}
+		ui.Info("enabling Email Routing DNS...")
+		if err := deps.EnableRoutingDNS(a.ctx); err != nil {
+			ui.Warn("dns: %v", err)
+		}
+		ui.Info("uploading worker %s...", deps.ScriptName)
+		if err := deps.UploadScript(a.ctx, inboxURL, bearer, fallback); err != nil {
+			return err
+		}
+		if fallback != "" {
+			ui.Info("registering fallback destination %s (verify via email!)...", fallback)
+			if err := deps.CreateDestination(a.ctx, fallback); err != nil {
+				ui.Warn("destination: %v", err)
+			}
+		}
+		ui.Info("setting catch-all -> worker...")
+		if err := deps.SetCatchAllWorker(a.ctx); err != nil {
+			return err
+		}
+		ui.Ok("worker deployed, catch-all -> %s", deps.ScriptName)
+		return nil
 	},
 }
 
 var workerStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show worker/route status",
+	Short: "Show Email Routing + catch-all status",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("worker status: Cloudflare REST wiring pending")
+		a, err := loadApp()
+		if err != nil {
+			return err
+		}
+		defer a.close()
+		sec := secretsFromFile(a.paths.Secrets)
+		accountID := sec["CF_ACCOUNT_ID"]
+		deps := worker.New(sec["CF_API_TOKEN"], accountID, a.cfg.Cloudflare.ZoneID, a.cfg.Cloudflare.WorkerName)
+		routing, catchAll, err := deps.Status(a.ctx)
+		if err != nil {
+			return err
+		}
+		ui.Info("routing: %s", routing)
+		ui.Info("catch-all: %s", catchAll)
+		return nil
 	},
 }
 
@@ -211,14 +325,18 @@ func init() {
 	rootCmd.AddCommand(keysCmd)
 
 	inboxListCmd.Flags().IntVarP(&inboxLimit, "limit", "n", 20, "max rows")
+	inboxWatchCmd.Flags().StringVar(&watchAddr, "addr", "", "Gmail address (default GMAIL_ADDRESS)")
+	inboxWatchCmd.Flags().BoolVar(&watchOnce, "once", false, "single poll then exit")
+	inboxWatchCmd.Flags().IntVar(&watchPeriod, "interval", 0, "seconds between polls (default config)")
 	inboxCmd.AddCommand(inboxListCmd, inboxWatchCmd)
 	rootCmd.AddCommand(inboxCmd)
 
+	workerDeployCmd.Flags().String("account", "", "Cloudflare account ID (or CF_ACCOUNT_ID)")
+	workerDeployCmd.Flags().String("inbox-url", "", "autokey /v1/inbox URL (default bind:port)")
+	workerDeployCmd.Flags().String("fallback", "", "fallback forward address (Gmail)")
 	workerCmd.AddCommand(workerDeployCmd, workerStatusCmd)
 	rootCmd.AddCommand(workerCmd)
 
 	serviceCmd.AddCommand(serviceInstallCmd, serviceUninstallCmd, serviceStatusCmd, serviceLogsCmd)
 	rootCmd.AddCommand(serviceCmd)
-
-	_ = pool.UUID4 // keep pool import if unused in future edits
 }

@@ -31,17 +31,17 @@ type Details struct {
 
 // Deps wires generateDetails collaborators (all injectable).
 type Deps struct {
-	DB          *sql.DB
-	Kripi       *kripi.Client
-	Producer    KeyProducer
-	Domain      string
-	Service     string
-	DefaultBIN  string
-	DefaultAmt  float64
-	CardName    string
-	MintCap     int // PROPOSED cap 3; unlimited is open (spec §18)
-	Now         func() time.Time
-	RequestID   func() string
+	DB         *sql.DB
+	Kripi      *kripi.Client
+	Producer   KeyProducer
+	Domain     string
+	Service    string
+	DefaultBIN string
+	DefaultAmt float64
+	CardName   string
+	MintCap    int // PROPOSED cap 3; unlimited is open (spec §18)
+	Now        func() time.Time
+	RequestID  func() string
 }
 
 // GenerateDetails implements the hardened user pseudocode:

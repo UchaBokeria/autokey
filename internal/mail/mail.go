@@ -13,13 +13,13 @@ import (
 
 // Inbound is a normalized inbound email from either ingress.
 type Inbound struct {
-	MessageID   string
-	Recipient   string
-	Sender      string
-	Subject     string
-	Text        string
-	HTML        string
-	ReceivedAt  time.Time
+	MessageID  string
+	Recipient  string
+	Sender     string
+	Subject    string
+	Text       string
+	HTML       string
+	ReceivedAt time.Time
 }
 
 // Store dedupes on message_id and stores the email.

@@ -33,30 +33,30 @@ func HomePaths() (Paths, error) {
 
 // Config mirrors spec §3 (PROPOSED, frozen at build).
 type Config struct {
-	Domain      string `mapstructure:"domain"`
-	EmailFormat string `mapstructure:"email_format"`
-	Hook        Hook   `mapstructure:"hook"`
-	Kripi       Kripi  `mapstructure:"kripi"`
-	Cloudflare  CF     `mapstructure:"cloudflare"`
-	Poller      Poller `mapstructure:"poller"`
+	Domain      string  `mapstructure:"domain"`
+	EmailFormat string  `mapstructure:"email_format"`
+	Hook        Hook    `mapstructure:"hook"`
+	Kripi       Kripi   `mapstructure:"kripi"`
+	Cloudflare  CF      `mapstructure:"cloudflare"`
+	Poller      Poller  `mapstructure:"poller"`
 	WalletAlert float64 `mapstructure:"wallet_alert_usd"`
 }
 
 // Hook holds the hook server security matrix.
 type Hook struct {
-	Bind       string   `mapstructure:"bind"`
-	Port       int      `mapstructure:"port"`
-	TokenFile  string   `mapstructure:"bearer_token_file"`
-	IPAllow    []string `mapstructure:"ip_allowlist"`
-	MTLS       bool     `mapstructure:"mtls"`
+	Bind      string   `mapstructure:"bind"`
+	Port      int      `mapstructure:"port"`
+	TokenFile string   `mapstructure:"bearer_token_file"`
+	IPAllow   []string `mapstructure:"ip_allowlist"`
+	MTLS      bool     `mapstructure:"mtls"`
 }
 
 // Kripi holds KripiCard provider defaults.
 type Kripi struct {
-	BaseURL   string  `mapstructure:"base_url"`
-	DefaultBIN string `mapstructure:"default_bin"`
+	BaseURL    string  `mapstructure:"base_url"`
+	DefaultBIN string  `mapstructure:"default_bin"`
 	DefaultAmt float64 `mapstructure:"default_amount_usd"`
-	MintCap    int    `mapstructure:"purchase_cap_per_run"`
+	MintCap    int     `mapstructure:"purchase_cap_per_run"`
 }
 
 // CF holds Cloudflare Email Routing settings.
@@ -87,8 +87,8 @@ func Defaults() Config {
 			DefaultAmt: 20,
 			MintCap:    3,
 		},
-		Cloudflare: CF{WorkerName: "autokey-inbox"},
-		Poller:     Poller{Enabled: true, Interval: 60},
+		Cloudflare:  CF{WorkerName: "autokey-inbox"},
+		Poller:      Poller{Enabled: true, Interval: 60},
 		WalletAlert: 50,
 	}
 }

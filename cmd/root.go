@@ -5,11 +5,11 @@ import (
 )
 
 var (
-	verbose  bool
-	jsonOut  bool
-	cfgFile  string
+	verbose   bool
+	jsonOut   bool
+	cfgFile   string
 	assumeYes bool
-	dryRun   bool
+	dryRun    bool
 )
 
 var rootCmd = &cobra.Command{

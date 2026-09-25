@@ -1,0 +1,26 @@
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofumpt
+    - gosec
+    - misspell
+    - unconvert
+    - whitespace
+  settings:
+    gosec:
+      excludes:
+        - G101 # secrets.env pattern is config, not hardcoded credential
+        - G304 # config-driven file paths by design
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+run:
+  timeout: 5m
