@@ -19,6 +19,7 @@ type Answers struct {
 	CFToken     string
 	ZoneID      string
 	KripiKey    string
+	CustomKey   string
 	BIN         string
 	Amount      float64
 	Provider    string
@@ -48,9 +49,12 @@ func Wizard() (Answers, error) {
 				}),
 			huh.NewSelect[string]().Title("Preferred card provider (hint only, --provider still required)").Options(
 				huh.NewOption("None (choose per command)", ""),
+				huh.NewOption("Your own card (typed in, encrypted)", "custom"),
 				huh.NewOption("Onramp Pay one-time ($5+)", "onramp"),
 				huh.NewOption("KripiCard virtual (funded wallet)", "kripi"),
 			).Value(&a.Provider),
+			huh.NewInput().Title("Custom card encryption key (optional now, required to add own cards)").EchoMode(huh.EchoModePassword).
+				Value(&a.CustomKey),
 			huh.NewInput().Title("Cloudflare API token").EchoMode(huh.EchoModePassword).
 				Value(&a.CFToken),
 			huh.NewInput().Title("Cloudflare Zone ID").Value(&a.ZoneID),
@@ -128,12 +132,17 @@ wallet_alert_usd: %.2f
 	var b [32]byte
 	_, _ = rand.Read(b[:])
 	bearer := hex.EncodeToString(b[:])
+	customKeyLine := ""
+	if a.CustomKey != "" {
+		customKeyLine = fmt.Sprintf("CUSTOM_CARD_KEY=%s\n", a.CustomKey)
+		a.CustomKey = "" // drop from memory once written
+	}
 	secrets := fmt.Sprintf(`KRIPI_API_KEY=%s
 CF_API_TOKEN=%s
 HOOK_BEARER=%s
 KRIPI_WEBHOOK_SECRET=
 GMAIL_APP_PASSWORD=
-`, a.KripiKey, a.CFToken, bearer)
+%s`, a.KripiKey, a.CFToken, bearer, customKeyLine)
 	if err := os.WriteFile(paths.Secrets, []byte(secrets), 0o600); err != nil {
 		return paths, fmt.Errorf("write secrets: %w", err)
 	}

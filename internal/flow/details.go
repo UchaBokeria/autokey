@@ -114,7 +114,10 @@ VALUES(?,?,?,?,?, 'pending',?,?)`, reqID, email, d.Service, keyQuantity, provide
 		}
 	}
 
-	// 2. Mint fresh up to cap.
+	// 2. Mint fresh up to cap (skipped for pool-only providers).
+	if !prov.CanMint() {
+		return fail("no working card", fmt.Errorf("pool exhausted (custom cards are pool-only: add more via cards add)"))
+	}
 	mintCap := d.MintCap
 	if mintCap <= 0 {
 		mintCap = 3

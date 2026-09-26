@@ -38,6 +38,7 @@ func migrate(ctx context.Context, sqldb *sql.DB) error {
 	}{
 		{1, "migrations/001_init.sql"},
 		{2, "migrations/002_provider.sql"},
+		{3, "migrations/003_custom.sql"},
 	}
 	var current int
 	// Fresh DBs have no schema_migrations table yet; treat as version 0.

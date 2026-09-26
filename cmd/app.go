@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/uchabokeria/autokey/internal/config"
+	"github.com/uchabokeria/autokey/internal/custom"
 	"github.com/uchabokeria/autokey/internal/db"
 	"github.com/uchabokeria/autokey/internal/flow"
 	"github.com/uchabokeria/autokey/internal/kripi"
@@ -104,10 +105,20 @@ func (a *app) kripiClient() *kripi.Client {
 
 // providers builds the CardProvider registry.
 func (a *app) providers() map[string]provider.CardProvider {
+	sec := secretsFromFile(a.paths.Secrets)
 	return map[string]provider.CardProvider{
 		"kripi":  kripi.NewProvider(a.kripiClient()),
 		"onramp": onramp.NewProvider(),
+		"custom": &custom.Provider{
+			DB:  a.sqldb,
+			Key: func() string { return sec["CUSTOM_CARD_KEY"] },
+		},
 	}
+}
+
+// providerNames lists registry keys for error messages.
+func (a *app) providerNames() string {
+	return "kripi|onramp|custom"
 }
 
 func (a *app) flowDeps() flow.Deps {
@@ -137,7 +148,7 @@ func (a *app) resolveProvider(flag string) (provider.CardProvider, string, error
 	if flag != "" {
 		p, ok := provs[flag]
 		if !ok {
-			return nil, "", fmt.Errorf("unknown provider %q (available: kripi|onramp)", flag)
+			return nil, "", fmt.Errorf("unknown provider %q (available: %s)", flag, a.providerNames())
 		}
 		return p, flag, nil
 	}
@@ -150,5 +161,5 @@ func (a *app) resolveProvider(flag string) (provider.CardProvider, string, error
 	if a.cfg.Provider != "" {
 		hint = fmt.Sprintf(" (hint: %s)", a.cfg.Provider)
 	}
-	return nil, "", fmt.Errorf("no provider given%s — use --provider kripi|onramp", hint)
+	return nil, "", fmt.Errorf("no provider given%s — use --provider %s", hint, a.providerNames())
 }

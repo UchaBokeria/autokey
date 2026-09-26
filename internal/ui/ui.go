@@ -3,8 +3,10 @@ package ui
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 )
 
 var (
@@ -84,4 +86,23 @@ func Dim(msg string, args ...any) {
 		s = lipgloss.NewStyle().Foreground(dimGray).Render(s)
 	}
 	fmt.Println(s)
+}
+
+// PromptSecret reads one line from the terminal without echoing it.
+// Falls back to a visible prompt when stdin is not a TTY.
+func PromptSecret(prompt string) (string, error) {
+	fmt.Fprint(os.Stderr, prompt)
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		var line string
+		if _, err := fmt.Scanln(&line); err != nil {
+			return "", fmt.Errorf("read input: %w", err)
+		}
+		return strings.TrimSpace(line), nil
+	}
+	raw, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Fprintln(os.Stderr)
+	if err != nil {
+		return "", fmt.Errorf("read secret: %w", err)
+	}
+	return strings.TrimSpace(string(raw)), nil
 }

@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/uchabokeria/autokey/internal/custom"
 	"github.com/uchabokeria/autokey/internal/db"
 	"github.com/uchabokeria/autokey/internal/kripi"
 	"github.com/uchabokeria/autokey/internal/pool"
@@ -182,4 +184,87 @@ type failAllProducer struct{}
 
 func (failAllProducer) Generate(_ context.Context, _ string, _ provider.Secrets, _ int) ([]string, error) {
 	return nil, fmt.Errorf("x service down")
+}
+
+func TestGenerateDetailsCustomPoolOnly(t *testing.T) {
+	ctx := context.Background()
+	sqldb, err := db.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	cp := &custom.Provider{
+		DB:     sqldb,
+		Key:    func() string { return "test-key" },
+		CardID: func(label string) string { return "custom_" + label },
+	}
+	// Producer always fails so the pool card fails; custom must NOT
+	// fall into a mint loop (pool-only provider).
+	n := 0
+	deps := Deps{
+		DB:        sqldb,
+		Providers: map[string]provider.CardProvider{"custom": cp},
+		Producer:  &failAllProducer{},
+		Domain:    "my.com", Service: "x",
+		MintCap: 2, Now: time.Now,
+		RequestID: func() string { n++; return fmt.Sprintf("req-%d", n) },
+	}
+	if _, err := cp.Add(ctx, custom.CardInput{
+		Label: "only", Number: "4111111111111111", Expiry: "12/28", CVV: "123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = GenerateDetails(ctx, deps, "custom", 1)
+	if err == nil {
+		t.Fatal("want failure (producer down)")
+	}
+	if !strings.Contains(err.Error(), "pool-only") {
+		t.Fatalf("want pool-only error, got: %v", err)
+	}
+}
+
+func TestGenerateDetailsCustomPoolHit(t *testing.T) {
+	ctx := context.Background()
+	sqldb, err := db.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	cp := &custom.Provider{
+		DB:     sqldb,
+		Key:    func() string { return "test-key" },
+		CardID: func(label string) string { return "custom_" + label },
+	}
+	if _, err := cp.Add(ctx, custom.CardInput{
+		Label: "mine", Number: "4111111111111111", Expiry: "12/28", CVV: "123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	deps := Deps{
+		DB:        sqldb,
+		Providers: map[string]provider.CardProvider{"custom": cp},
+		Producer:  &fakeProducer{},
+		Domain:    "my.com", Service: "x",
+		MintCap: 2, Now: time.Now,
+		RequestID: func() string { n++; return fmt.Sprintf("req-%d", n) },
+	}
+	// Single registered provider may be omitted.
+	detail, err := GenerateDetails(ctx, deps, "", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.CardID != "custom_mine" || detail.Provider != "custom" || detail.Last4 != "1111" {
+		t.Fatalf("want custom pool card, got %+v", detail)
+	}
+	var prov string
+	_ = sqldb.QueryRow(`SELECT provider FROM requests WHERE email=?`, detail.Email).Scan(&prov)
+	if prov != "custom" {
+		t.Fatalf("want request provider custom, got %q", prov)
+	}
+	var nk int
+	_ = sqldb.QueryRow(`SELECT COUNT(*) FROM keys`).Scan(&nk)
+	if nk != 3 {
+		t.Fatalf("want 3 keys persisted, got %d", nk)
+	}
 }

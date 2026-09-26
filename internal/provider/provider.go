@@ -7,7 +7,8 @@ import (
 
 // CardRef is a provider-agnostic handle to a card/order in the pool.
 type CardRef struct {
-	// ID is the provider's identifier (kripi card_id, onramp redeem_id).
+	// ID is the provider's identifier (kripi card_id, onramp redeem_id,
+	// custom custom_<rand>).
 	ID string
 	// Last4 is display only; empty when unknown (onramp pre-redeem).
 	Last4 string
@@ -57,10 +58,14 @@ func (e *ProviderError) Error() string {
 	return fmt.Sprintf("%s %s: %s", e.Provider, e.Class, e.Message)
 }
 
-// CardProvider abstracts virtual-card backends (kripi, onramp, ...).
+// CardProvider abstracts virtual-card backends (kripi, onramp, custom, ...).
 type CardProvider interface {
-	// Name returns the provider id: "kripi" | "onramp".
+	// Name returns the provider id: "kripi" | "onramp" | "custom".
 	Name() string
+	// CanMint reports whether Mint can create new cards/orders.
+	// Pool-only providers (custom) return false: generate flows use
+	// pool cards only and never enter the mint loop.
+	CanMint() bool
 	// Mint creates a card/order. May return a pending order (onramp unpaid).
 	Mint(ctx context.Context, p MintParams) (CardRef, error)
 	// Secrets fetches spend credentials. May fail when not ready (onramp unpaid).

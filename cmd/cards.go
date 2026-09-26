@@ -3,8 +3,11 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/uchabokeria/autokey/internal/custom"
 	"github.com/uchabokeria/autokey/internal/pool"
 	"github.com/uchabokeria/autokey/internal/provider"
 	"github.com/uchabokeria/autokey/internal/ui"
@@ -28,7 +31,7 @@ var cardsListCmd = &cobra.Command{
 		filter, _ := cmd.Flags().GetString("provider")
 		if filter != "" {
 			if _, ok := a.providers()[filter]; !ok {
-				return fmt.Errorf("unknown provider %q (available: kripi|onramp)", filter)
+				return fmt.Errorf("unknown provider %q (available: %s)", filter, a.providerNames())
 			}
 		}
 		cards, err := pool.ListPool(a.ctx, a.sqldb, filter, service)
@@ -62,11 +65,88 @@ var (
 	cardProduct     string
 	cardTicker      string
 	cardPayPalEmail string
+	customLabel     string
+	customNumber    string
+	customExpiry    string
+	customCVV       string
+	customName      string
 )
+
+// promptIfEmpty asks on the TTY (masked for secrets) when a flag was omitted.
+func promptIfEmpty(val, prompt string, secret bool) (string, error) {
+	if val != "" {
+		return val, nil
+	}
+	if secret {
+		return ui.PromptSecret(prompt)
+	}
+	fmt.Fprint(os.Stderr, prompt)
+	var line string
+	if _, err := fmt.Scanln(&line); err != nil {
+		return "", fmt.Errorf("read input: %w", err)
+	}
+	return strings.TrimSpace(line), nil
+}
+
+// runCardsAddCustom implements `cards create --provider custom` and
+// `cards add`: label + masked number/expiry/CVV entry, Luhn-checked,
+// AES-256-GCM sealed with CUSTOM_CARD_KEY, metadata in pool.
+func runCardsAddCustom(cmd *cobra.Command, a *app) error {
+	sec := secretsFromFile(a.paths.Secrets)
+	if sec["CUSTOM_CARD_KEY"] == "" {
+		return fmt.Errorf("CUSTOM_CARD_KEY is not set in secrets.env — run: autokey setup (or add it manually, 0600)")
+	}
+	var err error
+	label, err := promptIfEmpty(customLabel, "Label: ", false)
+	if err != nil {
+		return err
+	}
+	number, err := promptIfEmpty(customNumber, "Card number: ", true)
+	if err != nil {
+		return err
+	}
+	expiry, err := promptIfEmpty(customExpiry, "Expiry MM/YY: ", true)
+	if err != nil {
+		return err
+	}
+	cvv, err := promptIfEmpty(customCVV, "CVV: ", true)
+	if err != nil {
+		return err
+	}
+	name := customName
+	if name == "" {
+		name = label
+	}
+	p, ok := a.providers()["custom"]
+	if !ok {
+		return fmt.Errorf("custom provider not registered")
+	}
+	cp, ok := p.(*custom.Provider)
+	if !ok {
+		return fmt.Errorf("custom provider miswired")
+	}
+	if dryRun {
+		in := custom.CardInput{Label: label, Number: number, Expiry: expiry, CVV: cvv}
+		if err := custom.Validate(in); err != nil {
+			return err
+		}
+		ui.Info("dry-run: custom card %q validates", label)
+		return nil
+	}
+	ref, err := cp.Add(a.ctx, custom.CardInput{
+		Label: label, Number: number, Expiry: expiry, CVV: cvv, NameOnCard: name,
+	})
+	if err != nil {
+		return err
+	}
+	_ = cmd
+	ui.Ok("custom card %q registered as %s (last4=%s)", label, ref.ID, ref.Last4)
+	return nil
+}
 
 var cardsCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Mint a card via provider and register it in the pool",
+	Short: "Mint a card via provider and register it in the pool (custom = your own card)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		a, err := loadApp()
 		if err != nil {
@@ -99,6 +179,9 @@ var cardsCreateCmd = &cobra.Command{
 			if mp.DepositTicker == "" {
 				mp.DepositTicker = a.cfg.Onramp.DepositTicker
 			}
+		}
+		if name == "custom" {
+			return runCardsAddCustom(cmd, a)
 		}
 		if dryRun {
 			ui.Info("dry-run: would mint via %s amount=%.2f", name, mp.AmountUSD)
@@ -153,6 +236,9 @@ var cardsDetailsCmd = &cobra.Command{
 		}
 		defer a.close()
 		if p := pool.ProviderOf(a.ctx, a.sqldb, cardID); p != "" && p != "kripi" {
+			if p == "custom" {
+				return fmt.Errorf("card %s is your own card — no live balance API (fund/freeze/delete are kripi-only)", cardID)
+			}
 			return fmt.Errorf("card %s belongs to provider %q — use: autokey onramp status --redeem-id %s", cardID, p, cardID)
 		}
 		// NOTE: PAN/CVV deliberately never printed.
@@ -220,10 +306,95 @@ var cardsDeleteCmd = &cobra.Command{
 	},
 }
 
+var cardsAddCmd = &cobra.Command{
+	Use:   "add",
+	Short: "Add your own card (masked entry, encrypted at rest)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		a, err := loadApp()
+		if err != nil {
+			return err
+		}
+		defer a.close()
+		return runCardsAddCustom(cmd, a)
+	},
+}
+
+var cardsRemoveCmd = &cobra.Command{
+	Use:   "remove",
+	Short: "Remove a custom card from the pool (deletes secrets)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		a, err := loadApp()
+		if err != nil {
+			return err
+		}
+		defer a.close()
+		if cardID == "" {
+			return fmt.Errorf("need --id")
+		}
+		if p := pool.ProviderOf(a.ctx, a.sqldb, cardID); p != "custom" {
+			return fmt.Errorf("card %s belongs to provider %q — remove is custom-only (kripi: cards delete)", cardID, p)
+		}
+		if !assumeYes {
+			return fmt.Errorf("refusing without -y/--yes (deletes secrets)")
+		}
+		if dryRun {
+			ui.Info("dry-run: would remove custom card %s", cardID)
+			return nil
+		}
+		if _, err := a.sqldb.ExecContext(a.ctx, `DELETE FROM custom_cards WHERE card_id=?`, cardID); err != nil {
+			return err
+		}
+		if _, err := a.sqldb.ExecContext(a.ctx, `DELETE FROM cards WHERE card_id=?`, cardID); err != nil {
+			return err
+		}
+		ui.Ok("removed custom card %s", cardID)
+		return nil
+	},
+}
+
+var cardsShowCmd = &cobra.Command{
+	Use:   "show",
+	Short: "Show a custom card's number (decrypts to terminal, never logged)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		a, err := loadApp()
+		if err != nil {
+			return err
+		}
+		defer a.close()
+		if cardID == "" {
+			return fmt.Errorf("need --id")
+		}
+		if p := pool.ProviderOf(a.ctx, a.sqldb, cardID); p != "custom" {
+			return fmt.Errorf("card %s belongs to provider %q — show is custom-only", cardID, p)
+		}
+		p, ok := a.providers()["custom"]
+		if !ok {
+			return fmt.Errorf("custom provider not registered")
+		}
+		cp, ok := p.(*custom.Provider)
+		if !ok {
+			return fmt.Errorf("custom provider miswired")
+		}
+		s, err := cp.Secrets(a.ctx, cardID)
+		if err != nil {
+			return err
+		}
+		// Deliberately plain print: the user asked to see their own card.
+		// Never goes through the JSONL hook log (no request involved).
+		fmt.Printf("number: %s\nexpiry: %s\ncvv: %s\n", s.Number, s.Expiry, s.CVV)
+		return nil
+	},
+}
+
 func init() {
 	cardsListCmd.Flags().StringP("service", "s", "x", "service for per-service stats")
-	cardsListCmd.Flags().String("provider", "", "filter by provider: kripi|onramp (empty = all)")
-	cardsCreateCmd.Flags().StringVar(&cardProvider, "provider", "", "kripi|onramp (required)")
+	cardsListCmd.Flags().String("provider", "", "filter by provider: kripi|onramp|custom (empty = all)")
+	cardsCreateCmd.Flags().StringVar(&cardProvider, "provider", "", "kripi|onramp|custom (required)")
+	cardsCreateCmd.Flags().StringVar(&customLabel, "label", "", "custom card label")
+	cardsCreateCmd.Flags().StringVar(&customNumber, "number", "", "custom PAN (prompted masked if omitted)")
+	cardsCreateCmd.Flags().StringVar(&customExpiry, "expiry", "", "custom expiry MM/YY (prompted masked if omitted)")
+	cardsCreateCmd.Flags().StringVar(&customCVV, "cvv", "", "custom CVV (prompted masked if omitted)")
+	cardsCreateCmd.Flags().StringVar(&customName, "card-name", "", "custom cardholder name (default label)")
 	cardsCreateCmd.Flags().StringVar(&cardProduct, "product", "", "onramp product: visa|mastercard|paypal")
 	cardsCreateCmd.Flags().StringVar(&cardTicker, "ticker", "", "onramp deposit coin (default polygon/usdt)")
 	cardsCreateCmd.Flags().StringVar(&cardPayPalEmail, "paypal-email", "", "onramp paypal product email")
@@ -238,6 +409,13 @@ func init() {
 	cardsFreezeCmd.Flags().StringVar(&cardID, "id", "", "card ID")
 	cardsFreezeCmd.Flags().StringVar(&freezeAction, "action", "freeze", "freeze|unfreeze")
 	cardsDeleteCmd.Flags().StringVar(&cardID, "id", "", "card ID")
-	cardsCmd.AddCommand(cardsListCmd, cardsCreateCmd, cardsFundCmd, cardsDetailsCmd, cardsFreezeCmd, cardsDeleteCmd)
+	cardsAddCmd.Flags().StringVar(&customLabel, "label", "", "custom card label")
+	cardsAddCmd.Flags().StringVar(&customNumber, "number", "", "custom PAN (prompted masked if omitted)")
+	cardsAddCmd.Flags().StringVar(&customExpiry, "expiry", "", "custom expiry MM/YY (prompted masked if omitted)")
+	cardsAddCmd.Flags().StringVar(&customCVV, "cvv", "", "custom CVV (prompted masked if omitted)")
+	cardsAddCmd.Flags().StringVar(&customName, "card-name", "", "custom cardholder name (default label)")
+	cardsRemoveCmd.Flags().StringVar(&cardID, "id", "", "custom card ID")
+	cardsShowCmd.Flags().StringVar(&cardID, "id", "", "custom card ID")
+	cardsCmd.AddCommand(cardsListCmd, cardsCreateCmd, cardsAddCmd, cardsRemoveCmd, cardsShowCmd, cardsFundCmd, cardsDetailsCmd, cardsFreezeCmd, cardsDeleteCmd)
 	rootCmd.AddCommand(cardsCmd)
 }

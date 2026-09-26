@@ -288,7 +288,7 @@ func init() {
 	keysGenerateCmd.Flags().StringVar(&keyEmail, "email", "", "explicit email (skip mint)")
 	keysGenerateCmd.Flags().StringVar(&keyCard, "card", "", "card ID for explicit mode")
 	keysGenerateCmd.Flags().IntVarP(&keyQty, "qty", "n", 1, "keyQuantity 1..100")
-	keysGenerateCmd.Flags().StringVar(&keyProvider, "provider", "", "card provider kripi|onramp (required)")
+	keysGenerateCmd.Flags().StringVar(&keyProvider, "provider", "", "card provider kripi|onramp|custom (required)")
 	keysCmd.AddCommand(keysGenerateCmd)
 	rootCmd.AddCommand(keysCmd)
 

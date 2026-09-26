@@ -16,6 +16,9 @@ func NewProvider(c *Client) *Provider { return &Provider{C: c} }
 
 func (p *Provider) Name() string { return "kripi" }
 
+// CanMint reports true: KripiCard issues funded virtual cards via API.
+func (p *Provider) CanMint() bool { return true }
+
 // Mint issues a funded virtual card (wallet debited atomically).
 func (p *Provider) Mint(ctx context.Context, mp provider.MintParams) (provider.CardRef, error) {
 	bin := mp.BIN

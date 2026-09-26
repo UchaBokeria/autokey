@@ -18,6 +18,9 @@ func NewProvider() *Provider { return &Provider{C: New()} }
 
 func (p *Provider) Name() string { return "onramp" }
 
+// CanMint reports true: Onramp creates crypto-funded one-time orders via API.
+func (p *Provider) CanMint() bool { return true }
+
 // Mint checks stock then creates the order. The order is unpaid until the
 // customer sends crypto; Mint never moves funds.
 func (p *Provider) Mint(ctx context.Context, mp provider.MintParams) (provider.CardRef, error) {

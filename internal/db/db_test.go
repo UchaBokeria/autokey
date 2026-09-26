@@ -16,8 +16,8 @@ func TestMigrationsFresh(t *testing.T) {
 	if err := sqldb.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&v); err != nil {
 		t.Fatal(err)
 	}
-	if v != 2 {
-		t.Fatalf("want schema version 2, got %d", v)
+	if v != 3 {
+		t.Fatalf("want schema version 3, got %d", v)
 	}
 	for _, col := range [][2]string{{"cards", "provider"}, {"requests", "provider"}} {
 		var n int
@@ -28,6 +28,14 @@ func TestMigrationsFresh(t *testing.T) {
 		if n != 1 {
 			t.Fatalf("want provider column on %s", col[0])
 		}
+	}
+	var cc int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='custom_cards'`).Scan(&cc); err != nil {
+		t.Fatal(err)
+	}
+	if cc != 1 {
+		t.Fatal("want custom_cards table")
 	}
 }
 
@@ -40,7 +48,7 @@ func TestMigrationsUpgradeV1(t *testing.T) {
 	}
 	// Simulate a v1 database: drop provider columns, reset version.
 	for _, q := range []string{
-		`DELETE FROM schema_migrations WHERE version=2`,
+		`DELETE FROM schema_migrations WHERE version>=2`,
 		`ALTER TABLE cards DROP COLUMN provider`,
 		`ALTER TABLE requests DROP COLUMN provider`,
 	} {
@@ -58,7 +66,7 @@ func TestMigrationsUpgradeV1(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, q := range []string{
-		`DELETE FROM schema_migrations WHERE version=2`,
+		`DELETE FROM schema_migrations WHERE version>=2`,
 		`INSERT INTO cards(card_id,last4,bin,name_on_card,status,claimed,created_at)
 		 VALUES('chkr_old','','','','active',0,'t')`,
 		`INSERT INTO cards(card_id,last4,bin,name_on_card,status,claimed,created_at)

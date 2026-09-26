@@ -35,7 +35,7 @@ func HomePaths() (Paths, error) {
 type Config struct {
 	Domain      string  `mapstructure:"domain"`
 	EmailFormat string  `mapstructure:"email_format"`
-	Provider    string  `mapstructure:"provider"` // display hint only; never implicit (no default provider)
+	Provider    string  `mapstructure:"provider"` // display hint only; never implicit (no default provider; kripi|onramp|custom)
 	Hook        Hook    `mapstructure:"hook"`
 	Kripi       Kripi   `mapstructure:"kripi"`
 	Onramp      Onramp  `mapstructure:"onramp"`

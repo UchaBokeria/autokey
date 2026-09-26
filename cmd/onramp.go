@@ -78,20 +78,20 @@ var providerListCmd = &cobra.Command{
 		if a.cfg.Provider != "" {
 			ui.Info("~ = configured hint (not a default — --provider is still required)")
 		} else {
-			ui.Info("no hint configured — pass --provider kripi|onramp explicitly")
+			ui.Info("no hint configured — pass --provider kripi|onramp|custom explicitly")
 		}
 		return nil
 	},
 }
 
 var providerSetDefaultCmd = &cobra.Command{
-	Use:   "set-default [kripi|onramp|none]",
+	Use:   "set-default [kripi|onramp|custom|none]",
 	Short: "Set the provider hint (or clear it)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if name != "kripi" && name != "onramp" && name != "none" {
-			return fmt.Errorf("unknown provider %q (kripi|onramp|none)", name)
+		if name != "kripi" && name != "onramp" && name != "custom" && name != "none" {
+			return fmt.Errorf("unknown provider %q (kripi|onramp|custom|none)", name)
 		}
 		a, err := loadApp()
 		if err != nil {
