@@ -60,31 +60,162 @@ func digits(s string) string {
 	return b.String()
 }
 
-// Validate checks a card entry before it is stored.
+// Brand identifies the card network for length/CVV rules.
+type Brand string
+
+const (
+	BrandVisa     Brand = "visa"
+	BrandMaster   Brand = "mastercard"
+	BrandAmex     Brand = "amex"
+	BrandDiscover Brand = "discover"
+	BrandDiners   Brand = "diners"
+	BrandJCB      Brand = "jcb"
+	BrandUnionPay Brand = "unionpay"
+	BrandUnknown  Brand = "unknown"
+)
+
+// DetectBrand classifies a PAN by IIN ranges.
+func DetectBrand(num string) Brand {
+	d := digits(num)
+	switch {
+	case len(d) >= 1 && d[0] == '4':
+		return BrandVisa
+	case len(d) >= 2 && (d[:2] == "34" || d[:2] == "37"):
+		return BrandAmex
+	case len(d) >= 2 && d[:2] >= "51" && d[:2] <= "55":
+		return BrandMaster
+	case len(d) >= 4 && d[:4] >= "2221" && d[:4] <= "2720":
+		return BrandMaster
+	case hasAnyPrefix(d, []string{"6011", "65"}) ||
+		(len(d) >= 3 && d[:3] >= "644" && d[:3] <= "649"):
+		return BrandDiscover
+	case hasAnyPrefix(d, []string{"300", "301", "302", "303", "304", "305", "36", "38", "39"}):
+		return BrandDiners
+	case len(d) >= 4 && d[:4] >= "3528" && d[:4] <= "3589":
+		return BrandJCB
+	case len(d) >= 2 && d[:2] == "62":
+		return BrandUnionPay
+	default:
+		return BrandUnknown
+	}
+}
+
+func hasAnyPrefix(d string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(d, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// brandLengths maps brands to accepted PAN lengths.
+func brandLengths(b Brand) []int {
+	switch b {
+	case BrandAmex:
+		return []int{15}
+	case BrandDiners:
+		return []int{14, 16} // 14 native; 16 for network-partnered issues
+	case BrandVisa:
+		return []int{13, 16, 19}
+	case BrandUnionPay:
+		return []int{16, 17, 18, 19}
+	case BrandMaster, BrandDiscover, BrandJCB:
+		return []int{16}
+	default:
+		return []int{13, 14, 15, 16, 17, 18, 19}
+	}
+}
+
+// Validate checks a card entry before it is stored. Rules are brand-aware:
+// Amex takes 15 digits + 4-digit CID; Diners takes 14; the rest follow
+// their network lengths with 3-digit CVV (Amex 4). Expiry accepts
+// MM/YY, MM-YY, MM.YY, MMYY, and MM/YYYY.
 func Validate(in CardInput) error {
 	num := digits(in.Number)
-	if len(num) < 13 || len(num) > 19 {
-		return &Error{Message: "card number must be 13-19 digits"}
+	brand := DetectBrand(num)
+	okLen := false
+	for _, l := range brandLengths(brand) {
+		if len(num) == l {
+			okLen = true
+			break
+		}
+	}
+	if !okLen {
+		return &Error{Message: fmt.Sprintf("card number length %d invalid for %s", len(num), brand)}
 	}
 	if !luhn(num) {
 		return &Error{Message: "card number fails Luhn check"}
 	}
-	exp := strings.TrimSpace(in.Expiry)
-	if len(exp) != 5 || exp[2] != '/' {
-		return &Error{Message: "expiry must be MM/YY"}
-	}
-	mm := exp[:2]
-	if mm < "01" || mm > "12" {
-		return &Error{Message: "expiry month must be 01-12"}
+	if _, err := normalizeExpiry(in.Expiry); err != nil {
+		return err
 	}
 	cvv := digits(in.CVV)
-	if len(cvv) < 3 || len(cvv) > 4 {
-		return &Error{Message: "CVV must be 3-4 digits"}
+	wantCVV := 3
+	if brand == BrandAmex {
+		wantCVV = 4
+	}
+	if len(cvv) != wantCVV {
+		return &Error{Message: fmt.Sprintf("CVV must be %d digits for %s", wantCVV, brand)}
 	}
 	if strings.TrimSpace(in.Label) == "" {
 		return &Error{Message: "label is required"}
 	}
 	return nil
+}
+
+// normalizeExpiry accepts MM/YY, MM-YY, MM.YY, MMYY, MM/YYYY and
+// returns canonical MM/YY. Years map 00-99; four-digit years take mod 100.
+func normalizeExpiry(exp string) (string, error) {
+	e := strings.TrimSpace(exp)
+	e = strings.ReplaceAll(e, "-", "/")
+	e = strings.ReplaceAll(e, ".", "/")
+	e = strings.ReplaceAll(e, " ", "")
+	if strings.Contains(e, "/") {
+		parts := strings.SplitN(e, "/", 2)
+		mm, yy := parts[0], parts[1]
+		if len(mm) != 2 || (len(yy) != 2 && len(yy) != 4) {
+			return "", &Error{Message: "expiry must be MM/YY"}
+		}
+		if mm < "01" || mm > "12" {
+			return "", &Error{Message: "expiry month must be 01-12"}
+		}
+		if !allDigits(mm) || !allDigits(yy) {
+			return "", &Error{Message: "expiry must be MM/YY"}
+		}
+		if len(yy) == 4 {
+			yy = yy[2:]
+		}
+		return mm + "/" + yy, nil
+	}
+	d := digits(e)
+	if len(d) == 4 {
+		mm := d[:2]
+		if mm < "01" || mm > "12" {
+			return "", &Error{Message: "expiry month must be 01-12"}
+		}
+		return mm + "/" + d[2:], nil
+	}
+	if len(d) == 6 {
+		mm := d[:2]
+		if mm < "01" || mm > "12" {
+			return "", &Error{Message: "expiry month must be 01-12"}
+		}
+		return mm + "/" + d[4:], nil
+	}
+	return "", &Error{Message: "expiry must be MM/YY"}
+}
+
+func allDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func luhn(num string) bool {
@@ -245,6 +376,11 @@ func (p *Provider) Add(ctx context.Context, in CardInput) (provider.CardRef, err
 	if err := Validate(in); err != nil {
 		return provider.CardRef{}, err
 	}
+	exp, err := normalizeExpiry(in.Expiry)
+	if err != nil {
+		return provider.CardRef{}, err
+	}
+	in.Expiry = exp
 	key := ""
 	if p.Key != nil {
 		key = p.Key()

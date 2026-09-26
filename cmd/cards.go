@@ -73,6 +73,8 @@ var (
 )
 
 // promptIfEmpty asks on the TTY (masked for secrets) when a flag was omitted.
+// kind "pan" uses the live-preview card prompt (2s visible, then *,
+// last-4 echo on submit); other secrets use the fully masked prompt.
 func promptIfEmpty(val, prompt string, secret bool) (string, error) {
 	if val != "" {
 		return val, nil
@@ -88,6 +90,15 @@ func promptIfEmpty(val, prompt string, secret bool) (string, error) {
 	return strings.TrimSpace(line), nil
 }
 
+// promptCardNumber asks for the PAN with live preview when the flag
+// was omitted: digits visible 2s per group, then masked, last-4 echoed.
+func promptCardNumber(val string) (string, error) {
+	if val != "" {
+		return val, nil
+	}
+	return ui.PromptCardNumber("Card number: ")
+}
+
 // runCardsAddCustom implements `cards create --provider custom` and
 // `cards add`: label + masked number/expiry/CVV entry, Luhn-checked,
 // AES-256-GCM sealed with CUSTOM_CARD_KEY, metadata in pool.
@@ -101,7 +112,7 @@ func runCardsAddCustom(cmd *cobra.Command, a *app) error {
 	if err != nil {
 		return err
 	}
-	number, err := promptIfEmpty(customNumber, "Card number: ", true)
+	number, err := promptCardNumber(customNumber)
 	if err != nil {
 		return err
 	}

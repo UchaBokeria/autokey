@@ -20,11 +20,14 @@ The config `provider:` value is a display hint only.
 | `onramp` | Onramp Pay one-time orders | `cards create --provider onramp --product …` | crypto-funded; pay exact amount, then `onramp status --redeem-id …` |
 
 ```sh
-# your own card: label + masked PAN/expiry/CVV prompts, Luhn-checked
+# your own card: label + live-preview PAN entry (2s visible per group,
+# then masked; last-4 echoed on submit), Luhn + brand checked
 autokey cards add --label mine
 # fully flagged (no prompts)
 autokey cards create --provider custom --label mine \
   --number 4111111111111111 --expiry 12/28 --cvv 123
+# expiry also accepts 12-28, 12.28, 1228, 12/2028; Visa/MC/Amex/
+# Discover/Diners/JCB/UnionPay lengths enforced (Amex 15 + 4-digit CID)
 # pool + management
 autokey cards list --provider custom
 autokey cards show --id custom_<rand>   # decrypts to terminal only

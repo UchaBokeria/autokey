@@ -49,7 +49,6 @@ func TestValidate(t *testing.T) {
 	bad := []CardInput{
 		{Label: "x", Number: "123", Expiry: "12/28", CVV: "123"},              // too short
 		{Label: "x", Number: "4111111111111112", Expiry: "12/28", CVV: "123"}, // Luhn fail
-		{Label: "x", Number: "4111111111111111", Expiry: "1228", CVV: "123"},  // bad expiry
 		{Label: "x", Number: "4111111111111111", Expiry: "13/28", CVV: "123"}, // bad month
 		{Label: "x", Number: "4111111111111111", Expiry: "12/28", CVV: "12"},  // bad cvv
 		{Label: "", Number: "4111111111111111", Expiry: "12/28", CVV: "123"},  // no label
@@ -57,6 +56,81 @@ func TestValidate(t *testing.T) {
 	for i, in := range bad {
 		if err := Validate(in); err == nil {
 			t.Fatalf("case %d accepted", i)
+		}
+	}
+}
+
+func TestDetectBrand(t *testing.T) {
+	cases := map[Brand][]string{
+		BrandVisa:     {"4222222222222", "4111111111111111", "4111111111111111110"},
+		BrandMaster:   {"5555555555554444", "2221000000000009", "2720990000000007"},
+		BrandAmex:     {"378282246310005", "371449635398431"},
+		BrandDiscover: {"6011111111111117", "6500000000000002", "6440000000000005"},
+		BrandDiners:   {"3056930009020004", "36111111111111"},
+		BrandJCB:      {"3530111333300000"},
+		BrandUnknown:  {"9000000000000001"},
+	}
+	for want, pans := range cases {
+		for _, pan := range pans {
+			if got := DetectBrand(pan); got != want {
+				t.Fatalf("DetectBrand(%s) = %s, want %s", pan, got, want)
+			}
+		}
+	}
+}
+
+func TestValidateBrands(t *testing.T) {
+	// Luhn-verified vectors per network (docs test PANs + derived).
+	good := []CardInput{
+		{Label: "v13", Number: "4222222222222", Expiry: "12/28", CVV: "123"},
+		{Label: "v16", Number: "4111111111111111", Expiry: "12/28", CVV: "123"},
+		{Label: "v19", Number: "4111111111111111110", Expiry: "12/28", CVV: "123"},
+		{Label: "mc51", Number: "5555555555554444", Expiry: "12/28", CVV: "123"},
+		{Label: "mc2221", Number: "2221000000000009", Expiry: "12/28", CVV: "123"},
+		{Label: "mc2720", Number: "2720990000000007", Expiry: "12/28", CVV: "123"},
+		{Label: "amex", Number: "378282246310005", Expiry: "11/29", CVV: "1234"},
+		{Label: "amex2", Number: "371449635398431", Expiry: "01/30", CVV: "5678"},
+		{Label: "disc6011", Number: "6011111111111117", Expiry: "12/28", CVV: "123"},
+		{Label: "disc65", Number: "6500000000000002", Expiry: "12/28", CVV: "123"},
+		{Label: "disc644", Number: "6440000000000005", Expiry: "12/28", CVV: "123"},
+		{Label: "diners", Number: "3056930009020004", Expiry: "12/28", CVV: "123"},
+		{Label: "diners36", Number: "36111111111111", Expiry: "12/28", CVV: "123"},
+		{Label: "jcb", Number: "3530111333300000", Expiry: "12/28", CVV: "123"},
+	}
+	for _, in := range good {
+		if err := Validate(in); err != nil {
+			t.Fatalf("%s rejected: %v", in.Label, err)
+		}
+	}
+	bad := []CardInput{
+		{Label: "amex16", Number: "3782822463100051", Expiry: "11/29", CVV: "1234"},   // amex must be 15
+		{Label: "amex3", Number: "378282246310005", Expiry: "11/29", CVV: "123"},      // amex needs 4-digit CID
+		{Label: "mc15", Number: "555555555555444", Expiry: "12/28", CVV: "123"},       // mc must be 16
+		{Label: "diners16", Number: "30569300090200043", Expiry: "12/28", CVV: "123"}, // diners is 14-only
+		{Label: "visa12", Number: "422222222222", Expiry: "12/28", CVV: "123"},        // too short
+	}
+	for _, in := range bad {
+		if err := Validate(in); err == nil {
+			t.Fatalf("%s accepted", in.Label)
+		}
+	}
+}
+
+func TestNormalizeExpiry(t *testing.T) {
+	cases := map[string]string{
+		"12/28": "12/28", "12-28": "12/28", "12.28": "12/28",
+		"1228": "12/28", "12/2028": "12/28", "122028": "12/28",
+		" 01/30 ": "01/30",
+	}
+	for in, want := range cases {
+		got, err := normalizeExpiry(in)
+		if err != nil || got != want {
+			t.Fatalf("normalizeExpiry(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"", "13/28", "122", "12/2", "ab/cd", "00/28", "12/280"} {
+		if _, err := normalizeExpiry(in); err == nil {
+			t.Fatalf("normalizeExpiry(%q) accepted", in)
 		}
 	}
 }

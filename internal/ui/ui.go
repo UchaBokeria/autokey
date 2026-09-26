@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
@@ -105,4 +106,108 @@ func PromptSecret(prompt string) (string, error) {
 		return "", fmt.Errorf("read secret: %w", err)
 	}
 	return strings.TrimSpace(string(raw)), nil
+}
+
+// previewMaskDelay is how long the last typed group stays visible.
+const previewMaskDelay = 2 * time.Second
+
+// PromptCardNumber reads a card number with live preview: each digit group
+// stays visible for previewMaskDelay, then collapses to "*". Older groups
+// are always masked, so only the group being typed is ever on screen.
+// On submit the full number echoes as "…" plus the last 4 for confirmation.
+func PromptCardNumber(prompt string) (string, error) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprint(os.Stderr, prompt)
+		var line string
+		if _, err := fmt.Scanln(&line); err != nil {
+			return "", fmt.Errorf("read input: %w", err)
+		}
+		return strings.TrimSpace(line), nil
+	}
+	fmt.Fprint(os.Stderr, prompt)
+	fd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return "", fmt.Errorf("raw terminal: %w", err)
+	}
+	defer term.Restore(fd, oldState)
+
+	var digits []rune
+	redraw := func() {
+		// Clear to line start, then render: masked groups + live tail.
+		fmt.Fprint(os.Stderr, "\r\033[K"+prompt)
+		n := len(digits)
+		if n == 0 {
+			return
+		}
+		full := n / 4
+		for g := 0; g < full; g++ {
+			fmt.Fprint(os.Stderr, "**** ")
+		}
+		fmt.Fprint(os.Stderr, string(digits[full*4:]))
+	}
+	// maskTimer collapses the live tail after the delay.
+	var maskTimer *time.Timer
+	armTimer := func() {
+		if maskTimer != nil {
+			maskTimer.Stop()
+		}
+		maskTimer = time.AfterFunc(previewMaskDelay, func() {
+			fmt.Fprint(os.Stderr, "\r\033[K"+prompt)
+			for i := 0; i < len(digits); i += 4 {
+				if i > 0 {
+					fmt.Fprint(os.Stderr, " ")
+				}
+				end := i + 4
+				if end > len(digits) {
+					end = len(digits)
+				}
+				fmt.Fprint(os.Stderr, strings.Repeat("*", end-i))
+			}
+		})
+	}
+
+	buf := make([]byte, 1)
+	for {
+		n, err := os.Stdin.Read(buf)
+		if err != nil || n == 0 {
+			return "", fmt.Errorf("read input: %w", err)
+		}
+		b := buf[0]
+		switch {
+		case b == '\r' || b == '\n':
+			if maskTimer != nil {
+				maskTimer.Stop()
+			}
+			last4 := ""
+			if len(digits) >= 4 {
+				last4 = string(digits[len(digits)-4:])
+			}
+			fmt.Fprintf(os.Stderr, "\r\033[K%s… (last4=%s)\n", prompt, last4)
+			return string(digits), nil
+		case b == 127 || b == 8: // backspace
+			if len(digits) > 0 {
+				digits = digits[:len(digits)-1]
+				redraw()
+				armTimer()
+			}
+		case b == 3: // Ctrl-C
+			fmt.Fprintln(os.Stderr, "^C")
+			return "", fmt.Errorf("cancelled")
+		case b == 21: // Ctrl-U clears the line
+			digits = nil
+			redraw()
+			if maskTimer != nil {
+				maskTimer.Stop()
+			}
+		case b >= '0' && b <= '9':
+			if len(digits) < 19 {
+				digits = append(digits, rune(b))
+				redraw()
+				armTimer()
+			}
+		case b == ' ' || b == '-':
+			// ignore separators; grouping is derived from digit count
+		}
+	}
 }
