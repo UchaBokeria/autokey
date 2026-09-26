@@ -34,7 +34,7 @@ type Answers struct {
 func Wizard() (Answers, error) {
 	a := Answers{
 		BIN: "539502", Amount: 20, Bind: "127.0.0.1",
-		Provider: "onramp", OnrampProd: "mastercard",
+		Provider: "", OnrampProd: "mastercard",
 		InstallBin: true, WalletAlert: 50,
 	}
 	form := huh.NewForm(
@@ -46,8 +46,9 @@ func Wizard() (Answers, error) {
 					}
 					return nil
 				}),
-			huh.NewSelect[string]().Title("Default card provider").Options(
-				huh.NewOption("Onramp Pay one-time ($5+, default)", "onramp"),
+			huh.NewSelect[string]().Title("Preferred card provider (hint only, --provider still required)").Options(
+				huh.NewOption("None (choose per command)", ""),
+				huh.NewOption("Onramp Pay one-time ($5+)", "onramp"),
 				huh.NewOption("KripiCard virtual (funded wallet)", "kripi"),
 			).Value(&a.Provider),
 			huh.NewInput().Title("Cloudflare API token").EchoMode(huh.EchoModePassword).

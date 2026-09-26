@@ -57,20 +57,30 @@ type Card struct {
 	Last4      string
 	BIN        string
 	NameOnCard string
+	Provider   string
 	OK         int
 	Fail       int
 }
 
-// ListPool returns cards ordered by per-service success rate (healthy first).
-func ListPool(ctx context.Context, sqldb *sql.DB, service string) ([]Card, error) {
-	rows, err := sqldb.QueryContext(ctx, `
-SELECT c.card_id, c.last4, c.bin, c.name_on_card,
+// ListPool returns cards for one provider, ordered by per-service
+// success rate (healthy first). Empty provider means all providers
+// (used by cards list display; generate flows always scope).
+func ListPool(ctx context.Context, sqldb *sql.DB, providerName, service string) ([]Card, error) {
+	query := `
+SELECT c.card_id, c.last4, c.bin, c.name_on_card, c.provider,
        COALESCE(s.ok_count,0), COALESCE(s.fail_count,0)
 FROM cards c LEFT JOIN card_service_stats s
   ON s.card_id=c.card_id AND s.service=?
-WHERE c.status='active' AND c.claimed=0
+WHERE c.status='active' AND c.claimed=0`
+	args := []any{service}
+	if providerName != "" {
+		query += ` AND c.provider=?`
+		args = append(args, providerName)
+	}
+	query += `
 ORDER BY (COALESCE(s.ok_count,0)+1.0)/(COALESCE(s.ok_count,0)+COALESCE(s.fail_count,0)+2.0) DESC,
-         c.created_at ASC`, service)
+         c.created_at ASC`
+	rows, err := sqldb.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list pool: %w", err)
 	}
@@ -78,7 +88,7 @@ ORDER BY (COALESCE(s.ok_count,0)+1.0)/(COALESCE(s.ok_count,0)+COALESCE(s.fail_co
 	var out []Card
 	for rows.Next() {
 		var c Card
-		if err := rows.Scan(&c.ID, &c.Last4, &c.BIN, &c.NameOnCard, &c.OK, &c.Fail); err != nil {
+		if err := rows.Scan(&c.ID, &c.Last4, &c.BIN, &c.NameOnCard, &c.Provider, &c.OK, &c.Fail); err != nil {
 			return nil, fmt.Errorf("scan pool: %w", err)
 		}
 		out = append(out, c)
@@ -134,11 +144,18 @@ ON CONFLICT(card_id,service) DO UPDATE SET fail_count=fail_count+1, last_error=?
 	return err
 }
 
-// Register adds a minted card to the pool.
-func Register(ctx context.Context, sqldb *sql.DB, id, last4, bin, name string) error {
+// Register adds a minted card/order to the pool under its provider.
+func Register(ctx context.Context, sqldb *sql.DB, providerName, id, last4, bin, name string) error {
 	_, err := sqldb.ExecContext(ctx, `
-INSERT OR IGNORE INTO cards(card_id,last4,bin,name_on_card,status,claimed,created_at)
-VALUES(?,?,?,?, 'active',0,?)`,
-		id, last4, bin, name, Clock().UTC().Format(time.RFC3339))
+INSERT OR IGNORE INTO cards(card_id,last4,bin,name_on_card,provider,status,claimed,created_at)
+VALUES(?,?,?,?,?, 'active',0,?)`,
+		id, last4, bin, name, providerName, Clock().UTC().Format(time.RFC3339))
 	return err
+}
+
+// ProviderOf returns the provider recorded for a card id ("" if unknown).
+func ProviderOf(ctx context.Context, sqldb *sql.DB, cardID string) string {
+	var p string
+	_ = sqldb.QueryRowContext(ctx, `SELECT provider FROM cards WHERE card_id=?`, cardID).Scan(&p)
+	return p
 }

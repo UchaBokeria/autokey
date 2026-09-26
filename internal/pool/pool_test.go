@@ -42,11 +42,12 @@ func TestEmailFormat(t *testing.T) {
 func TestPoolOrderingAndClaim(t *testing.T) {
 	ctx := context.Background()
 	sqldb := openTest(t)
-	for _, c := range [][4]string{
-		{"c-good", "1111", "539502", "a"},
-		{"c-bad", "2222", "539502", "a"},
+	for _, c := range [][5]string{
+		{"kripi", "c-good", "1111", "539502", "a"},
+		{"kripi", "c-bad", "2222", "539502", "a"},
+		{"onramp", "o-other", "", "", "One-time"},
 	} {
-		if err := Register(ctx, sqldb, c[0], c[1], c[2], c[3]); err != nil {
+		if err := Register(ctx, sqldb, c[0], c[1], c[2], c[3], c[4]); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -58,12 +59,19 @@ func TestPoolOrderingAndClaim(t *testing.T) {
 	// Same card failing for service y must not affect x ordering.
 	_ = RecordResult(ctx, sqldb, "c-good", "y", false, "other-svc")
 
-	cards, err := ListPool(ctx, sqldb, "x")
+	cards, err := ListPool(ctx, sqldb, "kripi", "x")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(cards) != 2 || cards[0].ID != "c-good" {
 		t.Fatalf("want c-good first, got %+v", cards)
+	}
+	// Other providers are invisible to the kripi pool.
+	if onramp, err := ListPool(ctx, sqldb, "onramp", "x"); err != nil || len(onramp) != 1 || onramp[0].ID != "o-other" {
+		t.Fatalf("want only o-other for onramp, got %+v err=%v", onramp, err)
+	}
+	if all, err := ListPool(ctx, sqldb, "", "x"); err != nil || len(all) != 3 {
+		t.Fatalf("want 3 cards unscoped, got %+v err=%v", all, err)
 	}
 
 	release, err := Claim(ctx, sqldb, "c-good")
@@ -74,7 +82,7 @@ func TestPoolOrderingAndClaim(t *testing.T) {
 		t.Fatal("want double-claim to fail")
 	}
 	// Claimed card hidden from pool.
-	cards, _ = ListPool(ctx, sqldb, "x")
+	cards, _ = ListPool(ctx, sqldb, "kripi", "x")
 	if len(cards) != 1 || cards[0].ID != "c-bad" {
 		t.Fatalf("want only c-bad visible, got %+v", cards)
 	}

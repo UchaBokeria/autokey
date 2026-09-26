@@ -114,7 +114,6 @@ func (a *app) flowDeps() flow.Deps {
 	return flow.Deps{
 		DB:        a.sqldb,
 		Providers: a.providers(),
-		Default:   a.cfg.Provider,
 		Producer:  flow.StubProducer{},
 		Domain:    a.cfg.Domain,
 		Service:   "x",
@@ -129,4 +128,27 @@ func (a *app) flowDeps() flow.Deps {
 		Now:       time.Now,
 		RequestID: pool.UUID4,
 	}
+}
+
+// resolveProvider requires --provider unless exactly one provider exists.
+// Config default is only a display hint, never an implicit selection.
+func (a *app) resolveProvider(flag string) (provider.CardProvider, string, error) {
+	provs := a.providers()
+	if flag != "" {
+		p, ok := provs[flag]
+		if !ok {
+			return nil, "", fmt.Errorf("unknown provider %q (available: kripi|onramp)", flag)
+		}
+		return p, flag, nil
+	}
+	if len(provs) == 1 {
+		for name, p := range provs {
+			return p, name, nil
+		}
+	}
+	hint := ""
+	if a.cfg.Provider != "" {
+		hint = fmt.Sprintf(" (hint: %s)", a.cfg.Provider)
+	}
+	return nil, "", fmt.Errorf("no provider given%s — use --provider kripi|onramp", hint)
 }

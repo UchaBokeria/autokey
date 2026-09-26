@@ -74,7 +74,6 @@ func testDeps(sqldb *sql.DB, k *kripi.Client, p KeyProducer) Deps {
 		Providers: map[string]provider.CardProvider{
 			"kripi": kripi.NewProvider(k),
 		},
-		Default:  "kripi",
 		Producer: p,
 		Domain:   "my.com", Service: "x",
 		Mint: provider.MintParams{
@@ -92,7 +91,7 @@ func TestGenerateDetailsPoolHit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sqldb.Close()
-	if err := pool.Register(ctx, sqldb, "MR_POOL", "1111", "539502", "autokey"); err != nil {
+	if err := pool.Register(ctx, sqldb, "kripi", "MR_POOL", "1111", "539502", "autokey"); err != nil {
 		t.Fatal(err)
 	}
 	p := &fakeProducer{}
@@ -133,12 +132,12 @@ func TestGenerateDetailsPoolFailThenMint(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sqldb.Close()
-	if err := pool.Register(ctx, sqldb, "MR_DEAD", "2222", "539502", "autokey"); err != nil {
+	if err := pool.Register(ctx, sqldb, "kripi", "MR_DEAD", "2222", "539502", "autokey"); err != nil {
 		t.Fatal(err)
 	}
 	// Details fails for the pool card -> marked fail -> mint MR_NEW tried.
 	p := &fakeProducer{}
-	detail, err := GenerateDetails(ctx, testDeps(sqldb, fakeKripi(t, map[string]bool{"MR_DEAD": true}), p), "", 1)
+	detail, err := GenerateDetails(ctx, testDeps(sqldb, fakeKripi(t, map[string]bool{"MR_DEAD": true}), p), "kripi", 1)
 	if err != nil {
 		t.Fatal(err)
 	}

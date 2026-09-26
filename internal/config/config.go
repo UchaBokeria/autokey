@@ -35,7 +35,7 @@ func HomePaths() (Paths, error) {
 type Config struct {
 	Domain      string  `mapstructure:"domain"`
 	EmailFormat string  `mapstructure:"email_format"`
-	Provider    string  `mapstructure:"provider"` // default card provider: onramp|kripi
+	Provider    string  `mapstructure:"provider"` // display hint only; never implicit (no default provider)
 	Hook        Hook    `mapstructure:"hook"`
 	Kripi       Kripi   `mapstructure:"kripi"`
 	Onramp      Onramp  `mapstructure:"onramp"`
@@ -85,7 +85,7 @@ func Defaults() Config {
 	return Config{
 		Domain:      "example.com",
 		EmailFormat: "mmmDDMMYYYY-rand4",
-		Provider:    "onramp",
+		Provider:    "",
 		Hook: Hook{
 			Bind:      "127.0.0.1",
 			Port:      8765,

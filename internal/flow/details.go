@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/uchabokeria/autokey/internal/pool"
@@ -31,10 +32,12 @@ type Details struct {
 }
 
 // Deps wires generateDetails collaborators (all injectable).
+// Providers maps provider name -> implementation. There is no implicit
+// default: an empty provider name is an error unless exactly one
+// provider is registered (single-provider setups stay ergonomic).
 type Deps struct {
 	DB        *sql.DB
 	Providers map[string]provider.CardProvider
-	Default   string // default provider name
 	Producer  KeyProducer
 	Domain    string
 	Service   string
@@ -44,15 +47,37 @@ type Deps struct {
 	RequestID func() string
 }
 
-// GenerateDetails implements the hardened user pseudocode:
-// unique email -> try full pool (claim + mark) -> mint up to MintCap fresh.
-func GenerateDetails(ctx context.Context, d Deps, providerName string, keyQuantity int) (Details, error) {
-	if providerName == "" {
-		providerName = d.Default
+// resolveProvider requires an explicit provider unless exactly one exists.
+func resolveProvider(d Deps, name string) (provider.CardProvider, string, error) {
+	if name != "" {
+		prov, ok := d.Providers[name]
+		if !ok {
+			return nil, "", fmt.Errorf("unknown provider %q", name)
+		}
+		return prov, name, nil
 	}
-	prov, ok := d.Providers[providerName]
-	if !ok {
-		return Details{}, fmt.Errorf("unknown provider %q", providerName)
+	if len(d.Providers) == 1 {
+		for pname, prov := range d.Providers {
+			return prov, pname, nil
+		}
+	}
+	return nil, "", fmt.Errorf("no provider given (available: %s)", providerNames(d))
+}
+
+func providerNames(d Deps) string {
+	names := make([]string, 0, len(d.Providers))
+	for n := range d.Providers {
+		names = append(names, n)
+	}
+	return strings.Join(names, "|")
+}
+
+// GenerateDetails implements the hardened user pseudocode:
+// unique email -> try full provider pool (claim + mark) -> mint up to MintCap fresh.
+func GenerateDetails(ctx context.Context, d Deps, providerName string, keyQuantity int) (Details, error) {
+	prov, providerName, err := resolveProvider(d, providerName)
+	if err != nil {
+		return Details{}, err
 	}
 	now := d.Now().UTC().Format(time.RFC3339)
 	email, err := pool.CreateUniqueEmailUser(ctx, d.DB, d.Domain)
@@ -61,8 +86,8 @@ func GenerateDetails(ctx context.Context, d Deps, providerName string, keyQuanti
 	}
 	reqID := d.RequestID()
 	if _, err := d.DB.ExecContext(ctx, `
-INSERT INTO requests(id,email,service,key_quantity,status,created_at,updated_at)
-VALUES(?,?,?,?, 'pending',?,?)`, reqID, email, d.Service, keyQuantity, now, now); err != nil {
+INSERT INTO requests(id,email,service,key_quantity,provider,status,created_at,updated_at)
+VALUES(?,?,?,?,?, 'pending',?,?)`, reqID, email, d.Service, keyQuantity, providerName, now, now); err != nil {
 		return Details{}, fmt.Errorf("insert request: %w", err)
 	}
 	fail := func(msg string, err error) (Details, error) {
@@ -72,8 +97,8 @@ VALUES(?,?,?,?, 'pending',?,?)`, reqID, email, d.Service, keyQuantity, now, now)
 		return Details{}, fmt.Errorf("%s: %w", msg, err)
 	}
 
-	// 1. Try the full pool, healthy-first, with claim + per-service marking.
-	cards, err := pool.ListPool(ctx, d.DB, d.Service)
+	// 1. Try the provider pool, healthy-first, with claim + per-service marking.
+	cards, err := pool.ListPool(ctx, d.DB, providerName, d.Service)
 	if err != nil {
 		return fail("list pool", err)
 	}
@@ -105,7 +130,7 @@ VALUES(?,?,?,?, 'pending',?,?)`, reqID, email, d.Service, keyQuantity, now, now)
 			}
 			continue
 		}
-		if err := pool.Register(ctx, d.DB, ref.ID, ref.Last4, ref.BIN, ref.Name); err != nil {
+		if err := pool.Register(ctx, d.DB, providerName, ref.ID, ref.Last4, ref.BIN, ref.Name); err != nil {
 			return fail("register minted card", err)
 		}
 		detail, ok := tryCard(ctx, d, prov, providerName, reqID, email, ref.ID, keyQuantity)

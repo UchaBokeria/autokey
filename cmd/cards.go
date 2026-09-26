@@ -25,7 +25,13 @@ var cardsListCmd = &cobra.Command{
 		}
 		defer a.close()
 		service, _ := cmd.Flags().GetString("service")
-		cards, err := pool.ListPool(a.ctx, a.sqldb, service)
+		filter, _ := cmd.Flags().GetString("provider")
+		if filter != "" {
+			if _, ok := a.providers()[filter]; !ok {
+				return fmt.Errorf("unknown provider %q (available: kripi|onramp)", filter)
+			}
+		}
+		cards, err := pool.ListPool(a.ctx, a.sqldb, filter, service)
 		if err != nil {
 			return err
 		}
@@ -39,7 +45,7 @@ var cardsListCmd = &cobra.Command{
 			return nil
 		}
 		for _, c := range cards {
-			ui.Info("%s  last4=%s bin=%s ok=%d fail=%d", c.ID, c.Last4, c.BIN, c.OK, c.Fail)
+			ui.Info("%s [%s] last4=%s bin=%s ok=%d fail=%d", c.ID, c.Provider, c.Last4, c.BIN, c.OK, c.Fail)
 		}
 		return nil
 	},
@@ -67,13 +73,9 @@ var cardsCreateCmd = &cobra.Command{
 			return err
 		}
 		defer a.close()
-		name := cardProvider
-		if name == "" {
-			name = a.cfg.Provider
-		}
-		prov, ok := a.providers()[name]
-		if !ok {
-			return fmt.Errorf("unknown provider %q (kripi|onramp)", name)
+		prov, name, err := a.resolveProvider(cardProvider)
+		if err != nil {
+			return err
 		}
 		mp := provider.MintParams{
 			AmountUSD: cardAmount, Name: cardName, Email: cardEmail,
@@ -106,7 +108,7 @@ var cardsCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := pool.Register(a.ctx, a.sqldb, ref.ID, ref.Last4, ref.BIN, ref.Name); err != nil {
+		if err := pool.Register(a.ctx, a.sqldb, name, ref.ID, ref.Last4, ref.BIN, ref.Name); err != nil {
 			return err
 		}
 		ui.Ok("minted %s (%s) — registered in pool", ref.ID, name)
@@ -119,13 +121,16 @@ var cardsCreateCmd = &cobra.Command{
 
 var cardsFundCmd = &cobra.Command{
 	Use:   "fund",
-	Short: "Fund a card (fee $1.00 + 4%)",
+	Short: "Fund a KripiCard (fee $1.00 + 4%)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		a, err := loadApp()
 		if err != nil {
 			return err
 		}
 		defer a.close()
+		if p := pool.ProviderOf(a.ctx, a.sqldb, cardID); p != "" && p != "kripi" {
+			return fmt.Errorf("card %s belongs to provider %q — fund is kripi-only", cardID, p)
+		}
 		if dryRun {
 			ui.Info("dry-run: would fund %s amount=%.2f", cardID, cardAmount)
 			return nil
@@ -140,13 +145,16 @@ var cardsFundCmd = &cobra.Command{
 
 var cardsDetailsCmd = &cobra.Command{
 	Use:   "details",
-	Short: "Show live card details (balance, status)",
+	Short: "Show live KripiCard details (balance, status)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		a, err := loadApp()
 		if err != nil {
 			return err
 		}
 		defer a.close()
+		if p := pool.ProviderOf(a.ctx, a.sqldb, cardID); p != "" && p != "kripi" {
+			return fmt.Errorf("card %s belongs to provider %q — use: autokey onramp status --redeem-id %s", cardID, p, cardID)
+		}
 		// NOTE: PAN/CVV deliberately never printed.
 		_, balance, status, err := a.kripiClient().Details(a.ctx, cardID)
 		if err != nil {
@@ -161,13 +169,16 @@ var freezeAction string
 
 var cardsFreezeCmd = &cobra.Command{
 	Use:   "freeze",
-	Short: "Freeze or unfreeze a card",
+	Short: "Freeze or unfreeze a KripiCard",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		a, err := loadApp()
 		if err != nil {
 			return err
 		}
 		defer a.close()
+		if p := pool.ProviderOf(a.ctx, a.sqldb, cardID); p != "" && p != "kripi" {
+			return fmt.Errorf("card %s belongs to provider %q — freeze is kripi-only", cardID, p)
+		}
 		freeze := freezeAction != "unfreeze"
 		if dryRun {
 			ui.Info("dry-run: would set %s frozen=%v", cardID, freeze)
@@ -183,13 +194,16 @@ var cardsFreezeCmd = &cobra.Command{
 
 var cardsDeleteCmd = &cobra.Command{
 	Use:   "delete",
-	Short: "Delete a card (cashes balance minus $2 fee)",
+	Short: "Delete a KripiCard (cashes balance minus $2 fee)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		a, err := loadApp()
 		if err != nil {
 			return err
 		}
 		defer a.close()
+		if p := pool.ProviderOf(a.ctx, a.sqldb, cardID); p != "" && p != "kripi" {
+			return fmt.Errorf("card %s belongs to provider %q — delete is kripi-only", cardID, p)
+		}
 		if !assumeYes {
 			return fmt.Errorf("refusing without -y/--yes (irreversible)")
 		}
@@ -208,7 +222,8 @@ var cardsDeleteCmd = &cobra.Command{
 
 func init() {
 	cardsListCmd.Flags().StringP("service", "s", "x", "service for per-service stats")
-	cardsCreateCmd.Flags().StringVar(&cardProvider, "provider", "", "kripi|onramp (default config)")
+	cardsListCmd.Flags().String("provider", "", "filter by provider: kripi|onramp (empty = all)")
+	cardsCreateCmd.Flags().StringVar(&cardProvider, "provider", "", "kripi|onramp (required)")
 	cardsCreateCmd.Flags().StringVar(&cardProduct, "product", "", "onramp product: visa|mastercard|paypal")
 	cardsCreateCmd.Flags().StringVar(&cardTicker, "ticker", "", "onramp deposit coin (default polygon/usdt)")
 	cardsCreateCmd.Flags().StringVar(&cardPayPalEmail, "paypal-email", "", "onramp paypal product email")

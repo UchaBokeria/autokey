@@ -73,12 +73,9 @@ var keysGenerateCmd = &cobra.Command{
 		}
 		defer a.close()
 		deps := a.flowDeps()
-		if keyProvider == "" {
-			keyProvider = a.cfg.Provider
-		}
-		prov, ok := deps.Providers[keyProvider]
-		if !ok {
-			return fmt.Errorf("unknown provider %q (kripi|onramp)", keyProvider)
+		prov, providerName, err := a.resolveProvider(keyProvider)
+		if err != nil {
+			return err
 		}
 		if keyEmail != "" {
 			// Direct single-shot with explicit email+card.
@@ -101,7 +98,7 @@ var keysGenerateCmd = &cobra.Command{
 		if keyQty < 1 || keyQty > 100 {
 			return fmt.Errorf("keyQuantity must be 1..100")
 		}
-		detail, err := flow.GenerateDetails(a.ctx, deps, keyProvider, keyQty)
+		detail, err := flow.GenerateDetails(a.ctx, deps, providerName, keyQty)
 		if err != nil {
 			return err
 		}
@@ -291,7 +288,7 @@ func init() {
 	keysGenerateCmd.Flags().StringVar(&keyEmail, "email", "", "explicit email (skip mint)")
 	keysGenerateCmd.Flags().StringVar(&keyCard, "card", "", "card ID for explicit mode")
 	keysGenerateCmd.Flags().IntVarP(&keyQty, "qty", "n", 1, "keyQuantity 1..100")
-	keysGenerateCmd.Flags().StringVar(&keyProvider, "provider", "", "card provider kripi|onramp (default config)")
+	keysGenerateCmd.Flags().StringVar(&keyProvider, "provider", "", "card provider kripi|onramp (required)")
 	keysCmd.AddCommand(keysGenerateCmd)
 	rootCmd.AddCommand(keysCmd)
 

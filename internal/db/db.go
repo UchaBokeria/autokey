@@ -32,15 +32,33 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 }
 
 func migrate(ctx context.Context, sqldb *sql.DB) error {
-	raw, err := migrations.ReadFile("migrations/001_init.sql")
-	if err != nil {
-		return fmt.Errorf("read migration: %w", err)
+	ordered := []struct {
+		version int
+		file    string
+	}{
+		{1, "migrations/001_init.sql"},
+		{2, "migrations/002_provider.sql"},
 	}
-	if _, err := sqldb.ExecContext(ctx, string(raw)); err != nil {
-		return fmt.Errorf("apply migration 001: %w", err)
+	var current int
+	// Fresh DBs have no schema_migrations table yet; treat as version 0.
+	_ = sqldb.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&current)
+	for _, m := range ordered {
+		if m.version <= current {
+			continue
+		}
+		raw, err := migrations.ReadFile(m.file)
+		if err != nil {
+			return fmt.Errorf("read migration %s: %w", m.file, err)
+		}
+		if _, err := sqldb.ExecContext(ctx, string(raw)); err != nil {
+			return fmt.Errorf("apply migration %d: %w", m.version, err)
+		}
+		if _, err := sqldb.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(?, ?)`,
+			m.version, time.Now().UTC().Format(time.RFC3339)); err != nil {
+			return fmt.Errorf("record migration %d: %w", m.version, err)
+		}
 	}
-	_, _ = sqldb.ExecContext(ctx,
-		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, ?)`,
-		time.Now().UTC().Format(time.RFC3339))
 	return nil
 }

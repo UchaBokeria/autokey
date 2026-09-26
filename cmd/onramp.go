@@ -12,7 +12,7 @@ import (
 
 var onrampCmd = &cobra.Command{
 	Use:   "onramp",
-	Short: "Onramp Pay one-time cards (default provider)",
+	Short: "Onramp Pay one-time cards (supported provider)",
 }
 
 var onrampStockCmd = &cobra.Command{
@@ -61,7 +61,7 @@ var providerCmd = &cobra.Command{
 
 var providerListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List providers + current default",
+	Short: "List providers + configured hint",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		a, err := loadApp()
 		if err != nil {
@@ -71,22 +71,27 @@ var providerListCmd = &cobra.Command{
 		for name := range a.providers() {
 			mark := " "
 			if name == a.cfg.Provider {
-				mark = "*"
+				mark = "~"
 			}
 			ui.Info("%s %s", mark, name)
+		}
+		if a.cfg.Provider != "" {
+			ui.Info("~ = configured hint (not a default — --provider is still required)")
+		} else {
+			ui.Info("no hint configured — pass --provider kripi|onramp explicitly")
 		}
 		return nil
 	},
 }
 
 var providerSetDefaultCmd = &cobra.Command{
-	Use:   "set-default [kripi|onramp]",
-	Short: "Change the default card provider",
+	Use:   "set-default [kripi|onramp|none]",
+	Short: "Set the provider hint (or clear it)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if name != "kripi" && name != "onramp" {
-			return fmt.Errorf("unknown provider %q (kripi|onramp)", name)
+		if name != "kripi" && name != "onramp" && name != "none" {
+			return fmt.Errorf("unknown provider %q (kripi|onramp|none)", name)
 		}
 		a, err := loadApp()
 		if err != nil {
@@ -100,11 +105,18 @@ var providerSetDefaultCmd = &cobra.Command{
 		v := viper.New()
 		v.SetConfigFile(file)
 		_ = v.ReadInConfig()
+		if name == "none" {
+			name = ""
+		}
 		v.Set("provider", name)
 		if err := v.WriteConfig(); err != nil {
 			return fmt.Errorf("write config: %w", err)
 		}
-		ui.Ok("default provider -> %s", name)
+		if name == "" {
+			ui.Ok("provider hint cleared — --provider is required")
+		} else {
+			ui.Ok("provider hint -> %s (--provider still required)", name)
+		}
 		return nil
 	},
 }
