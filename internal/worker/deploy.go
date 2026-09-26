@@ -114,7 +114,12 @@ func (d Deps) UploadScript(ctx context.Context, inboxURL, bearer, fallback strin
 	}
 	rawMeta, _ := json.Marshal(meta)
 	_ = mw.WriteField("metadata", string(rawMeta))
-	fw, err := mw.CreateFormFile("worker.js", "worker.js")
+	// ES module part MUST be application/javascript+module (else
+	// "Main module must be an ES module").
+	h := make(map[string][]string)
+	h["Content-Disposition"] = []string{`form-data; name="worker.js"; filename="worker.js"`}
+	h["Content-Type"] = []string{"application/javascript+module"}
+	fw, err := mw.CreatePart(h)
 	if err != nil {
 		return err
 	}
