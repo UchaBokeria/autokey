@@ -47,3 +47,18 @@ curl -X POST http://127.0.0.1:8765/v1/generate \
   -H "Authorization: Bearer $HOOK_BEARER" \
   -d '{"keyQuantity": 5, "provider": "custom"}'
 ```
+
+## Persistent ingress
+
+`autokey service install` enables two user units:
+
+- `autokey.service` — the hook (`Restart=always`).
+- `autokey-tunnel.service` — ingress, `BindsTo` the hook:
+  - **Named tunnel** if `~/.config/autokey/tunnel.yml` exists
+    (stable hostname, e.g. `https://hook.uchabokeria.space` — create
+    once via `cloudflared tunnel create` + dashboard hostname route).
+  - **Quick tunnel fallback** otherwise: fresh `trycloudflare.com`
+    URL per restart, inbox Worker auto-repointed via `worker deploy`.
+
+Both survive reboots (linger + `WantedBy=default.target`).
+

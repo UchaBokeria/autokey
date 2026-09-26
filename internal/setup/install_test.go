@@ -46,7 +46,7 @@ func TestTunnelUnitAndScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"tunnel --url", "worker deploy --inbox-url", "trycloudflare"} {
+	for _, want := range []string{"tunnel --url", "worker deploy --inbox-url", "trycloudflare", "tunnel.yml", "NAMED_CFG"} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("script missing %q", want)
 		}

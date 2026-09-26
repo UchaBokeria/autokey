@@ -73,9 +73,10 @@ WantedBy=default.target
 `, exe, home)
 }
 
-// TunnelUnit returns the ingress unit: quick tunnel + worker repoint.
-// BindsTo the hook so both restart together; Restart=always makes
-// ingress self-heal across reboots (fresh URL repoints the Worker).
+// TunnelUnit returns the ingress unit. When a named-tunnel config exists
+// (~/.config/autokey/tunnel.yml) the unit runs it directly (stable
+// hostname, no repoint needed). Otherwise it runs the embedded quick
+// tunnel + worker-repoint script (self-healing across reboots).
 func TunnelUnit(scriptPath string) string {
 	return fmt.Sprintf(`[Unit]
 Description=autokey ingress: quick tunnel + worker repoint (self-healing)
