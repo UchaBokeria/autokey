@@ -30,6 +30,7 @@ var serviceUninstallRealCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		for _, args := range [][]string{
 			{"--user", "disable", "--now", "autokey.service"},
+			{"--user", "disable", "--now", "autokey-tunnel.service"},
 		} {
 			c := exec.Command("systemctl", args...)
 			c.Stdout = os.Stdout
@@ -41,8 +42,9 @@ var serviceUninstallRealCmd = &cobra.Command{
 		home, _ := os.UserHomeDir()
 		unit := home + "/.config/systemd/user/autokey.service"
 		_ = os.Remove(unit)
+		_ = os.Remove(home + "/.config/systemd/user/autokey-tunnel.service")
 		_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
-		ui.Ok("service removed")
+		ui.Ok("service + ingress removed")
 		return nil
 	},
 }

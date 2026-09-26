@@ -1,6 +1,7 @@
 package setup
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,6 +9,9 @@ import (
 
 	"github.com/uchabokeria/autokey/internal/ui"
 )
+
+//go:embed tunnel.sh
+var tunnelScript string
 
 // InstallSelf copies the running binary to /usr/local/bin/autokey (sudo only for the copy).
 func InstallSelf() error {
@@ -60,7 +64,8 @@ Wants=network-online.target
 
 [Service]
 ExecStart=%s hook serve
-Restart=on-failure
+Restart=always
+RestartSec=5
 Environment=HOME=%s
 
 [Install]
@@ -68,7 +73,42 @@ WantedBy=default.target
 `, exe, home)
 }
 
-// InstallService writes + enables the systemd --user unit. Opt-in only.
+// TunnelUnit returns the ingress unit: quick tunnel + worker repoint.
+// BindsTo the hook so both restart together; Restart=always makes
+// ingress self-heal across reboots (fresh URL repoints the Worker).
+func TunnelUnit(scriptPath string) string {
+	return fmt.Sprintf(`[Unit]
+Description=autokey ingress: quick tunnel + worker repoint (self-healing)
+After=network-online.target autokey.service
+Wants=network-online.target
+BindsTo=autokey.service
+
+[Service]
+Type=simple
+Environment=HOME=%s
+ExecStart=%s
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=default.target
+`, os.Getenv("HOME"), scriptPath)
+}
+
+// TunnelScriptPath writes the embedded tunnel script and returns its path.
+func TunnelScriptPath(home string) (string, error) {
+	dir := filepath.Join(home, ".config", "autokey")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir autokey conf: %w", err)
+	}
+	path := filepath.Join(dir, "autokey-tunnel.sh")
+	if err := os.WriteFile(path, []byte(tunnelScript), 0o755); err != nil {
+		return "", fmt.Errorf("write tunnel script: %w", err)
+	}
+	return path, nil
+}
+
+// InstallService writes + enables the hook and tunnel units. Opt-in only.
 func InstallService() error {
 	home, _ := os.UserHomeDir()
 	exe := "/usr/local/bin/autokey"
@@ -83,9 +123,18 @@ func InstallService() error {
 	if err := os.WriteFile(unit, []byte(ServiceUnit(exe, home)), 0o644); err != nil {
 		return fmt.Errorf("write unit: %w", err)
 	}
+	scriptPath, err := TunnelScriptPath(home)
+	if err != nil {
+		return err
+	}
+	tunit := filepath.Join(unitDir, "autokey-tunnel.service")
+	if err := os.WriteFile(tunit, []byte(TunnelUnit(scriptPath)), 0o644); err != nil {
+		return fmt.Errorf("write tunnel unit: %w", err)
+	}
 	for _, args := range [][]string{
 		{"--user", "daemon-reload"},
 		{"--user", "enable", "--now", "autokey.service"},
+		{"--user", "enable", "--now", "autokey-tunnel.service"},
 	} {
 		cmd := exec.Command("systemctl", args...)
 		cmd.Stdout = os.Stdout
@@ -94,6 +143,6 @@ func InstallService() error {
 			return fmt.Errorf("systemctl %v: %w (WSL1 has no systemd — run `autokey hook serve` manually)", args, err)
 		}
 	}
-	ui.Ok("service enabled (systemd --user)")
+	ui.Ok("service + ingress enabled (systemd --user)")
 	return nil
 }
