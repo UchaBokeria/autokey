@@ -91,7 +91,8 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		KeyQuantity int `json:"keyQuantity"`
+		KeyQuantity int    `json:"keyQuantity"`
+		Provider    string `json:"provider"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"success": false, "message": "invalid JSON"})
@@ -101,7 +102,7 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"success": false, "message": "keyQuantity must be 1..100"})
 		return
 	}
-	detail, err := flow.GenerateDetails(r.Context(), s.Deps, req.KeyQuantity)
+	detail, err := flow.GenerateDetails(r.Context(), s.Deps, req.Provider, req.KeyQuantity)
 	if err != nil {
 		s.log("warn", "generate failed: "+err.Error())
 		writeJSON(w, http.StatusBadGateway, map[string]any{"success": false, "message": err.Error()})
@@ -120,7 +121,7 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success": true, "email": detail.Email,
-		"card_last4": detail.Last4, "keys": keys,
+		"card_last4": detail.Last4, "provider": detail.Provider, "keys": keys,
 	})
 }
 

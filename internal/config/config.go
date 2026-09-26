@@ -35,8 +35,10 @@ func HomePaths() (Paths, error) {
 type Config struct {
 	Domain      string  `mapstructure:"domain"`
 	EmailFormat string  `mapstructure:"email_format"`
+	Provider    string  `mapstructure:"provider"` // default card provider: onramp|kripi
 	Hook        Hook    `mapstructure:"hook"`
 	Kripi       Kripi   `mapstructure:"kripi"`
+	Onramp      Onramp  `mapstructure:"onramp"`
 	Cloudflare  CF      `mapstructure:"cloudflare"`
 	Poller      Poller  `mapstructure:"poller"`
 	WalletAlert float64 `mapstructure:"wallet_alert_usd"`
@@ -59,6 +61,13 @@ type Kripi struct {
 	MintCap    int     `mapstructure:"purchase_cap_per_run"`
 }
 
+// Onramp holds Onramp one-time-card defaults.
+type Onramp struct {
+	Product       string  `mapstructure:"product"` // visa|mastercard|paypal
+	AmountUSD     float64 `mapstructure:"amount_usd"`
+	DepositTicker string  `mapstructure:"deposit_ticker"`
+}
+
 // CF holds Cloudflare Email Routing settings.
 type CF struct {
 	ZoneID     string `mapstructure:"zone_id"`
@@ -76,6 +85,7 @@ func Defaults() Config {
 	return Config{
 		Domain:      "example.com",
 		EmailFormat: "mmmDDMMYYYY-rand4",
+		Provider:    "onramp",
 		Hook: Hook{
 			Bind:      "127.0.0.1",
 			Port:      8765,
@@ -86,6 +96,10 @@ func Defaults() Config {
 			DefaultBIN: "539502",
 			DefaultAmt: 20,
 			MintCap:    3,
+		},
+		Onramp: Onramp{
+			Product: "mastercard", AmountUSD: 5,
+			DepositTicker: "polygon/usdt",
 		},
 		Cloudflare:  CF{WorkerName: "autokey-inbox"},
 		Poller:      Poller{Enabled: true, Interval: 60},

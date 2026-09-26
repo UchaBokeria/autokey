@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/uchabokeria/autokey/internal/pool"
+	"github.com/uchabokeria/autokey/internal/provider"
 	"github.com/uchabokeria/autokey/internal/ui"
 )
 
@@ -45,41 +46,73 @@ var cardsListCmd = &cobra.Command{
 }
 
 var (
-	cardBIN    string
-	cardAmount float64
-	cardName   string
-	cardEmail  string
-	cardDOB    string
-	cardID     string
+	cardBIN         string
+	cardAmount      float64
+	cardName        string
+	cardEmail       string
+	cardDOB         string
+	cardID          string
+	cardProvider    string
+	cardProduct     string
+	cardTicker      string
+	cardPayPalEmail string
 )
 
 var cardsCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Mint a KripiCard and register it in the pool",
+	Short: "Mint a card via provider and register it in the pool",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		a, err := loadApp()
 		if err != nil {
 			return err
 		}
 		defer a.close()
-		if cardBIN == "" {
-			cardBIN = a.cfg.Kripi.DefaultBIN
+		name := cardProvider
+		if name == "" {
+			name = a.cfg.Provider
 		}
-		if cardAmount == 0 {
-			cardAmount = a.cfg.Kripi.DefaultAmt
+		prov, ok := a.providers()[name]
+		if !ok {
+			return fmt.Errorf("unknown provider %q (kripi|onramp)", name)
+		}
+		mp := provider.MintParams{
+			AmountUSD: cardAmount, Name: cardName, Email: cardEmail,
+			Product: cardProduct, BIN: cardBIN, DOB: cardDOB,
+			DepositTicker: cardTicker, PayPalEmail: cardPayPalEmail,
+		}
+		if name == "kripi" {
+			if mp.BIN == "" {
+				mp.BIN = a.cfg.Kripi.DefaultBIN
+			}
+			if mp.AmountUSD == 0 {
+				mp.AmountUSD = a.cfg.Kripi.DefaultAmt
+			}
+		} else {
+			if mp.Product == "" {
+				mp.Product = a.cfg.Onramp.Product
+			}
+			if mp.AmountUSD == 0 {
+				mp.AmountUSD = a.cfg.Onramp.AmountUSD
+			}
+			if mp.DepositTicker == "" {
+				mp.DepositTicker = a.cfg.Onramp.DepositTicker
+			}
 		}
 		if dryRun {
-			ui.Info("dry-run: would create bin=%s amount=%.2f name=%q", cardBIN, cardAmount, cardName)
+			ui.Info("dry-run: would mint via %s amount=%.2f", name, mp.AmountUSD)
 			return nil
 		}
-		card, err := a.kripiClient().CreateCard(a.ctx, cardBIN, cardAmount, cardName, cardEmail, cardDOB)
+		ref, err := prov.Mint(a.ctx, mp)
 		if err != nil {
 			return err
 		}
-		if err := pool.Register(a.ctx, a.sqldb, card.ID, card.Last4, card.BIN, card.NameOnCard); err != nil {
+		if err := pool.Register(a.ctx, a.sqldb, ref.ID, ref.Last4, ref.BIN, ref.Name); err != nil {
 			return err
 		}
-		ui.Ok("minted %s last4=%s — registered in pool", card.ID, card.Last4)
+		ui.Ok("minted %s (%s) — registered in pool", ref.ID, name)
+		if name == "onramp" {
+			ui.Info("pay the exact crypto amount, then: autokey onramp status --redeem-id %s", ref.ID)
+		}
 		return nil
 	},
 }
@@ -175,8 +208,12 @@ var cardsDeleteCmd = &cobra.Command{
 
 func init() {
 	cardsListCmd.Flags().StringP("service", "s", "x", "service for per-service stats")
-	cardsCreateCmd.Flags().StringVar(&cardBIN, "bin", "", "card BIN (default config)")
-	cardsCreateCmd.Flags().Float64Var(&cardAmount, "amount", 0, "initial USD (min 10)")
+	cardsCreateCmd.Flags().StringVar(&cardProvider, "provider", "", "kripi|onramp (default config)")
+	cardsCreateCmd.Flags().StringVar(&cardProduct, "product", "", "onramp product: visa|mastercard|paypal")
+	cardsCreateCmd.Flags().StringVar(&cardTicker, "ticker", "", "onramp deposit coin (default polygon/usdt)")
+	cardsCreateCmd.Flags().StringVar(&cardPayPalEmail, "paypal-email", "", "onramp paypal product email")
+	cardsCreateCmd.Flags().StringVar(&cardBIN, "bin", "", "kripi BIN (default config)")
+	cardsCreateCmd.Flags().Float64Var(&cardAmount, "amount", 0, "USD amount (kripi min 10, onramp min 5)")
 	cardsCreateCmd.Flags().StringVar(&cardName, "name", "autokey", "cardholder name")
 	cardsCreateCmd.Flags().StringVar(&cardEmail, "email", "", "cardholder email")
 	cardsCreateCmd.Flags().StringVar(&cardDOB, "dob", "", "YYYY-MM-DD (US/SG/UK BINs)")

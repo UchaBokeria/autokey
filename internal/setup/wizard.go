@@ -21,6 +21,8 @@ type Answers struct {
 	KripiKey    string
 	BIN         string
 	Amount      float64
+	Provider    string
+	OnrampProd  string
 	Bind        string
 	AllowLAN    bool
 	InstallBin  bool
@@ -32,6 +34,7 @@ type Answers struct {
 func Wizard() (Answers, error) {
 	a := Answers{
 		BIN: "539502", Amount: 20, Bind: "127.0.0.1",
+		Provider: "onramp", OnrampProd: "mastercard",
 		InstallBin: true, WalletAlert: 50,
 	}
 	form := huh.NewForm(
@@ -43,14 +46,23 @@ func Wizard() (Answers, error) {
 					}
 					return nil
 				}),
+			huh.NewSelect[string]().Title("Default card provider").Options(
+				huh.NewOption("Onramp Pay one-time ($5+, default)", "onramp"),
+				huh.NewOption("KripiCard virtual (funded wallet)", "kripi"),
+			).Value(&a.Provider),
 			huh.NewInput().Title("Cloudflare API token").EchoMode(huh.EchoModePassword).
 				Value(&a.CFToken),
 			huh.NewInput().Title("Cloudflare Zone ID").Value(&a.ZoneID),
-			huh.NewInput().Title("KripiCard API key").EchoMode(huh.EchoModePassword).
+			huh.NewInput().Title("KripiCard API key (optional)").EchoMode(huh.EchoModePassword).
 				Value(&a.KripiKey),
 		),
 		huh.NewGroup(
-			huh.NewInput().Title("Default mint BIN").Value(&a.BIN),
+			huh.NewSelect[string]().Title("Onramp product").Options(
+				huh.NewOption("Mastercard (default)", "mastercard"),
+				huh.NewOption("Visa", "visa"),
+				huh.NewOption("PayPal", "paypal"),
+			).Value(&a.OnrampProd),
+			huh.NewInput().Title("Default mint BIN (kripi)").Value(&a.BIN),
 			huh.NewInput().Title("Bind address (default localhost)").Value(&a.Bind),
 			huh.NewConfirm().Title("Install to /usr/local/bin?").Value(&a.InstallBin),
 			huh.NewConfirm().Title("Enable systemd --user service? (default off)").Value(&a.EnableSvc),
@@ -85,6 +97,7 @@ func Apply(ctx context.Context, a Answers) (config.Paths, error) {
 	}
 	cfg := fmt.Sprintf(`domain: %s
 email_format: mmmDDMMYYYY-rand4
+provider: %s
 hook:
   bind: %s
   port: 8765
@@ -96,6 +109,10 @@ kripi:
   default_bin: "%s"
   default_amount_usd: %.2f
   purchase_cap_per_run: 3
+onramp:
+  product: "%s"
+  amount_usd: 5
+  deposit_ticker: polygon/usdt
 cloudflare:
   zone_id: "%s"
   worker_name: autokey-inbox
@@ -103,7 +120,7 @@ poller:
   gmail_fallback_enabled: true
   interval_sec: 60
 wallet_alert_usd: %.2f
-`, a.Domain, a.Bind, a.BIN, a.Amount, a.ZoneID, a.WalletAlert)
+`, a.Domain, a.Provider, a.Bind, a.BIN, a.Amount, a.OnrampProd, a.ZoneID, a.WalletAlert)
 	if err := os.WriteFile(paths.ConfigFile, []byte(cfg), 0o600); err != nil {
 		return paths, fmt.Errorf("write config: %w", err)
 	}

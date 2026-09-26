@@ -13,6 +13,7 @@ import (
 	"github.com/uchabokeria/autokey/internal/db"
 	"github.com/uchabokeria/autokey/internal/kripi"
 	"github.com/uchabokeria/autokey/internal/pool"
+	"github.com/uchabokeria/autokey/internal/provider"
 )
 
 type fakeProducer struct {
@@ -20,7 +21,7 @@ type fakeProducer struct {
 	calls   int
 }
 
-func (f *fakeProducer) Generate(_ context.Context, email string, _ kripi.CardSecrets, qty int) ([]string, error) {
+func (f *fakeProducer) Generate(_ context.Context, email string, _ provider.Secrets, qty int) ([]string, error) {
 	f.calls++
 	if f.failFor[email] {
 		return nil, fmt.Errorf("x service declined")
@@ -69,9 +70,16 @@ func fakeKripi(t *testing.T, failDetailFor map[string]bool) *kripi.Client {
 func testDeps(sqldb *sql.DB, k *kripi.Client, p KeyProducer) Deps {
 	n := 0
 	return Deps{
-		DB: sqldb, Kripi: k, Producer: p,
-		Domain: "my.com", Service: "x",
-		DefaultBIN: "539502", DefaultAmt: 20, CardName: "autokey",
+		DB: sqldb,
+		Providers: map[string]provider.CardProvider{
+			"kripi": kripi.NewProvider(k),
+		},
+		Default:  "kripi",
+		Producer: p,
+		Domain:   "my.com", Service: "x",
+		Mint: provider.MintParams{
+			AmountUSD: 20, Name: "autokey", BIN: "539502",
+		},
 		MintCap: 2, Now: time.Now,
 		RequestID: func() string { n++; return fmt.Sprintf("req-%d", n) },
 	}
@@ -88,11 +96,11 @@ func TestGenerateDetailsPoolHit(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &fakeProducer{}
-	detail, err := GenerateDetails(ctx, testDeps(sqldb, fakeKripi(t, nil), p), 2)
+	detail, err := GenerateDetails(ctx, testDeps(sqldb, fakeKripi(t, nil), p), "kripi", 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail.CardID != "MR_POOL" || detail.Last4 != "1111" {
+	if detail.CardID != "MR_POOL" || detail.Last4 != "1111" || detail.Provider != "kripi" {
 		t.Fatalf("want pool card, got %+v", detail)
 	}
 	if p.calls != 1 {
@@ -102,6 +110,19 @@ func TestGenerateDetailsPoolHit(t *testing.T) {
 	_ = sqldb.QueryRow(`SELECT COUNT(*) FROM keys`).Scan(&n)
 	if n != 2 {
 		t.Fatalf("want 2 keys persisted, got %d", n)
+	}
+}
+
+func TestGenerateDetailsUnknownProvider(t *testing.T) {
+	ctx := context.Background()
+	sqldb, err := db.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	p := &fakeProducer{}
+	if _, err := GenerateDetails(ctx, testDeps(sqldb, fakeKripi(t, nil), p), "nope", 1); err == nil {
+		t.Fatal("want unknown-provider error")
 	}
 }
 
@@ -117,7 +138,7 @@ func TestGenerateDetailsPoolFailThenMint(t *testing.T) {
 	}
 	// Details fails for the pool card -> marked fail -> mint MR_NEW tried.
 	p := &fakeProducer{}
-	detail, err := GenerateDetails(ctx, testDeps(sqldb, fakeKripi(t, map[string]bool{"MR_DEAD": true}), p), 1)
+	detail, err := GenerateDetails(ctx, testDeps(sqldb, fakeKripi(t, map[string]bool{"MR_DEAD": true}), p), "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +168,7 @@ func TestGenerateDetailsAllFail(t *testing.T) {
 	_ = p
 	// Producer always fails: wrap to fail everything.
 	pf := &failAllProducer{}
-	_, err = GenerateDetails(ctx, testDeps(sqldb, fakeKripi(t, nil), pf), 1)
+	_, err = GenerateDetails(ctx, testDeps(sqldb, fakeKripi(t, nil), pf), "kripi", 1)
 	if err == nil {
 		t.Fatal("want failure when everything fails")
 	}
@@ -160,6 +181,6 @@ func TestGenerateDetailsAllFail(t *testing.T) {
 
 type failAllProducer struct{}
 
-func (failAllProducer) Generate(_ context.Context, _ string, _ kripi.CardSecrets, _ int) ([]string, error) {
+func (failAllProducer) Generate(_ context.Context, _ string, _ provider.Secrets, _ int) ([]string, error) {
 	return nil, fmt.Errorf("x service down")
 }

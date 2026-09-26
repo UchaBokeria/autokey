@@ -6,47 +6,54 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/uchabokeria/autokey/internal/kripi"
 	"github.com/uchabokeria/autokey/internal/pool"
+	"github.com/uchabokeria/autokey/internal/provider"
 )
 
 // KeyProducer generates keys for an email+card. Playwright impl is a stub in v1.
 type KeyProducer interface {
-	Generate(ctx context.Context, email string, card kripi.CardSecrets, qty int) ([]string, error)
+	Generate(ctx context.Context, email string, card provider.Secrets, qty int) ([]string, error)
 }
 
 // StubProducer is the v1 placeholder until the X service is provided.
 type StubProducer struct{}
 
-func (StubProducer) Generate(_ context.Context, email string, _ kripi.CardSecrets, qty int) ([]string, error) {
+func (StubProducer) Generate(_ context.Context, email string, _ provider.Secrets, qty int) ([]string, error) {
 	return nil, fmt.Errorf("key producer not implemented (x service pending) for %s qty=%d", email, qty)
 }
 
 // Details is the result of generateDetails.
 type Details struct {
-	Email  string
-	CardID string
-	Last4  string
+	Email    string
+	CardID   string
+	Last4    string
+	Provider string
 }
 
 // Deps wires generateDetails collaborators (all injectable).
 type Deps struct {
-	DB         *sql.DB
-	Kripi      *kripi.Client
-	Producer   KeyProducer
-	Domain     string
-	Service    string
-	DefaultBIN string
-	DefaultAmt float64
-	CardName   string
-	MintCap    int // PROPOSED cap 3; unlimited is open (spec §18)
-	Now        func() time.Time
-	RequestID  func() string
+	DB        *sql.DB
+	Providers map[string]provider.CardProvider
+	Default   string // default provider name
+	Producer  KeyProducer
+	Domain    string
+	Service   string
+	Mint      provider.MintParams
+	MintCap   int // cap per run; unlimited is open (spec §18)
+	Now       func() time.Time
+	RequestID func() string
 }
 
 // GenerateDetails implements the hardened user pseudocode:
 // unique email -> try full pool (claim + mark) -> mint up to MintCap fresh.
-func GenerateDetails(ctx context.Context, d Deps, keyQuantity int) (Details, error) {
+func GenerateDetails(ctx context.Context, d Deps, providerName string, keyQuantity int) (Details, error) {
+	if providerName == "" {
+		providerName = d.Default
+	}
+	prov, ok := d.Providers[providerName]
+	if !ok {
+		return Details{}, fmt.Errorf("unknown provider %q", providerName)
+	}
 	now := d.Now().UTC().Format(time.RFC3339)
 	email, err := pool.CreateUniqueEmailUser(ctx, d.DB, d.Domain)
 	if err != nil {
@@ -75,7 +82,7 @@ VALUES(?,?,?,?, 'pending',?,?)`, reqID, email, d.Service, keyQuantity, now, now)
 		if err != nil {
 			continue // grabbed concurrently; try next
 		}
-		detail, ok := tryCard(ctx, d, reqID, email, c.ID, keyQuantity)
+		detail, ok := tryCard(ctx, d, prov, providerName, reqID, email, c.ID, keyQuantity)
 		_ = release(ctx)
 		if ok {
 			return detail, nil
@@ -87,21 +94,21 @@ VALUES(?,?,?,?, 'pending',?,?)`, reqID, email, d.Service, keyQuantity, now, now)
 	if mintCap <= 0 {
 		mintCap = 3
 	}
+	mp := d.Mint
+	mp.Email = email
 	for i := 0; i < mintCap; i++ {
-		card, err := d.Kripi.CreateCard(ctx, d.DefaultBIN, d.DefaultAmt, d.CardName, email, "")
-		if cerr, isCard := err.(*kripi.CardError); err != nil && isCard {
-			if !cerr.Retryable() {
-				// 202 / refund-pending / rate-limited at mint: stop, never double-charge.
-				return fail("mint card non-retryable "+cerr.Class.String(), err)
+		ref, err := prov.Mint(ctx, mp)
+		if err != nil {
+			if pe := prov.Classify(err); pe != nil && !pe.Retryable {
+				// Non-retryable (e.g. kripi 202/refund-pending): stop, never double-charge.
+				return fail("mint non-retryable "+pe.Class, err)
 			}
 			continue
-		} else if err != nil {
-			continue
 		}
-		if err := pool.Register(ctx, d.DB, card.ID, card.Last4, card.BIN, card.NameOnCard); err != nil {
+		if err := pool.Register(ctx, d.DB, ref.ID, ref.Last4, ref.BIN, ref.Name); err != nil {
 			return fail("register minted card", err)
 		}
-		detail, ok := tryCard(ctx, d, reqID, email, card.ID, keyQuantity)
+		detail, ok := tryCard(ctx, d, prov, providerName, reqID, email, ref.ID, keyQuantity)
 		if ok {
 			return detail, nil
 		}
@@ -109,16 +116,15 @@ VALUES(?,?,?,?, 'pending',?,?)`, reqID, email, d.Service, keyQuantity, now, now)
 	return fail("no working card", fmt.Errorf("pool exhausted and %d mints failed", mintCap))
 }
 
-// tryCard fetches live PAN, runs the producer, records stats, persists request+keys.
-func tryCard(ctx context.Context, d Deps, reqID, email, cardID string, qty int) (Details, bool) {
-	// Live details needed for the producer.
+// tryCard fetches live secrets, runs the producer, records stats, persists request+keys.
+func tryCard(ctx context.Context, d Deps, prov provider.CardProvider, providerName, reqID, email, cardID string, qty int) (Details, bool) {
 	var last4 string
 	_ = d.DB.QueryRowContext(ctx, `SELECT last4 FROM cards WHERE card_id=?`, cardID).Scan(&last4)
-	secrets, _, _, err := d.Kripi.Details(ctx, cardID)
+	secrets, err := prov.Secrets(ctx, cardID)
 	if err != nil {
 		_ = pool.RecordResult(ctx, d.DB, cardID, d.Service, false, err.Error())
-		if cerr, ok := err.(*kripi.CardError); ok && cerr.Class == kripi.CleanFail {
-			_ = d.Kripi.Freeze(ctx, cardID, true) // quarantine issuer-declined card only
+		if pe := prov.Classify(err); pe != nil && pe.Class == "clean-fail" {
+			_ = prov.Quarantine(ctx, cardID) // quarantine declined cards only
 		}
 		return Details{}, false
 	}
@@ -142,5 +148,5 @@ func tryCard(ctx context.Context, d Deps, reqID, email, cardID string, qty int) 
 			return Details{}, false
 		}
 	}
-	return Details{Email: email, CardID: cardID, Last4: last4}, true
+	return Details{Email: email, CardID: cardID, Last4: last4, Provider: providerName}, true
 }

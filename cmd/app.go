@@ -12,7 +12,9 @@ import (
 	"github.com/uchabokeria/autokey/internal/db"
 	"github.com/uchabokeria/autokey/internal/flow"
 	"github.com/uchabokeria/autokey/internal/kripi"
+	"github.com/uchabokeria/autokey/internal/onramp"
 	"github.com/uchabokeria/autokey/internal/pool"
+	"github.com/uchabokeria/autokey/internal/provider"
 	"github.com/uchabokeria/autokey/internal/ui"
 )
 
@@ -100,18 +102,31 @@ func (a *app) kripiClient() *kripi.Client {
 	return c
 }
 
+// providers builds the CardProvider registry.
+func (a *app) providers() map[string]provider.CardProvider {
+	return map[string]provider.CardProvider{
+		"kripi":  kripi.NewProvider(a.kripiClient()),
+		"onramp": onramp.NewProvider(),
+	}
+}
+
 func (a *app) flowDeps() flow.Deps {
 	return flow.Deps{
-		DB:         a.sqldb,
-		Kripi:      a.kripiClient(),
-		Producer:   flow.StubProducer{},
-		Domain:     a.cfg.Domain,
-		Service:    "x",
-		DefaultBIN: a.cfg.Kripi.DefaultBIN,
-		DefaultAmt: a.cfg.Kripi.DefaultAmt,
-		CardName:   "autokey",
-		MintCap:    a.cfg.Kripi.MintCap,
-		Now:        time.Now,
-		RequestID:  pool.UUID4,
+		DB:        a.sqldb,
+		Providers: a.providers(),
+		Default:   a.cfg.Provider,
+		Producer:  flow.StubProducer{},
+		Domain:    a.cfg.Domain,
+		Service:   "x",
+		Mint: provider.MintParams{
+			AmountUSD:     a.cfg.Onramp.AmountUSD,
+			Name:          "autokey",
+			Product:       a.cfg.Onramp.Product,
+			BIN:           a.cfg.Kripi.DefaultBIN,
+			DepositTicker: a.cfg.Onramp.DepositTicker,
+		},
+		MintCap:   a.cfg.Kripi.MintCap,
+		Now:       time.Now,
+		RequestID: pool.UUID4,
 	}
 }
