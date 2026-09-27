@@ -12,6 +12,9 @@ var (
 	dryRun    bool
 )
 
+// version is set at build time: -ldflags "-X github.com/uchabokeria/autokey/cmd.version=v1.2.3".
+var version = "dev"
+
 var rootCmd = &cobra.Command{
 	Use:   "autokey",
 	Short: "Wildcard inbox + virtual-card pool + key pipeline in one binary",

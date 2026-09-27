@@ -54,6 +54,43 @@ var cardsListCmd = &cobra.Command{
 	},
 }
 
+var cardsRemoteCmd = &cobra.Command{
+	Use:   "remote",
+	Short: "List cards at the provider side (kripi account; onramp: use stock)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		a, err := loadApp()
+		if err != nil {
+			return err
+		}
+		defer a.close()
+		name := cardProvider
+		if name == "" {
+			name = "kripi"
+		}
+		if name != "kripi" {
+			return fmt.Errorf("remote list is kripi-only (onramp: onramp stock; custom: cards list --provider custom)")
+		}
+		cards, err := a.kripiClient().List(a.ctx)
+		if err != nil {
+			return err
+		}
+		if jsonOut {
+			raw, _ := json.MarshalIndent(cards, "", "  ")
+			fmt.Println(string(raw))
+			return nil
+		}
+		if len(cards) == 0 {
+			ui.Info("no cards at kripi")
+			return nil
+		}
+		for _, c := range cards {
+			ui.Info("%s last4=%s bin=%s brand=%s status=%s balance=%.2f",
+				c.ID, c.Last4, c.BIN, c.Brand, c.Status, c.Balance)
+		}
+		return nil
+	},
+}
+
 var (
 	cardBIN         string
 	cardAmount      float64
@@ -401,6 +438,7 @@ func init() {
 	cardsListCmd.Flags().StringP("service", "s", "x", "service for per-service stats")
 	cardsListCmd.Flags().String("provider", "", "filter by provider: kripi|onramp|custom (empty = all)")
 	cardsCreateCmd.Flags().StringVar(&cardProvider, "provider", "", "kripi|onramp|custom (required)")
+	cardsRemoteCmd.Flags().StringVar(&cardProvider, "provider", "", "remote side to list (kripi only)")
 	cardsCreateCmd.Flags().StringVar(&customLabel, "label", "", "custom card label")
 	cardsCreateCmd.Flags().StringVar(&customNumber, "number", "", "custom PAN (prompted masked if omitted)")
 	cardsCreateCmd.Flags().StringVar(&customExpiry, "expiry", "", "custom expiry MM/YY (prompted masked if omitted)")
@@ -427,6 +465,6 @@ func init() {
 	cardsAddCmd.Flags().StringVar(&customName, "card-name", "", "custom cardholder name (default label)")
 	cardsRemoveCmd.Flags().StringVar(&cardID, "id", "", "custom card ID")
 	cardsShowCmd.Flags().StringVar(&cardID, "id", "", "custom card ID")
-	cardsCmd.AddCommand(cardsListCmd, cardsCreateCmd, cardsAddCmd, cardsRemoveCmd, cardsShowCmd, cardsFundCmd, cardsDetailsCmd, cardsFreezeCmd, cardsDeleteCmd)
+	cardsCmd.AddCommand(cardsListCmd, cardsCreateCmd, cardsAddCmd, cardsRemoveCmd, cardsShowCmd, cardsFundCmd, cardsDetailsCmd, cardsFreezeCmd, cardsDeleteCmd, cardsRemoteCmd)
 	rootCmd.AddCommand(cardsCmd)
 }

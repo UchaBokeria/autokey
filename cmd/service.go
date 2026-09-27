@@ -32,6 +32,7 @@ var serviceUninstallRealCmd = &cobra.Command{
 			{"--user", "disable", "--now", "autokey.service"},
 			{"--user", "disable", "--now", "autokey-tunnel.service"},
 		} {
+			//nolint:gosec // args are fixed unit names, never user input
 			c := exec.Command("systemctl", args...)
 			c.Stdout = os.Stdout
 			c.Stderr = os.Stderr
@@ -74,7 +75,7 @@ var serviceLogsRealCmd = &cobra.Command{
 		if err != nil {
 			ui.Warn("no log file yet: %v", err)
 		} else {
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			var lines []string
 			sc := bufio.NewScanner(f)
 			sc.Buffer(make([]byte, 1<<20), 1<<20)
@@ -88,6 +89,7 @@ var serviceLogsRealCmd = &cobra.Command{
 				fmt.Println(l)
 			}
 		}
+		//nolint:gosec // fixed binary + unit, n is an int flag
 		j := exec.Command("journalctl", "--user", "-u", "autokey.service", "-n", fmt.Sprint(n), "--no-pager")
 		j.Stdout = os.Stdout
 		j.Stderr = os.Stderr

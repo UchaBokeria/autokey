@@ -34,11 +34,11 @@ func PollOnce(ctx context.Context, sqldb *sql.DB, cfg PollConfig) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("imap dial: %w", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	if err := client.Login(cfg.Username, cfg.Password).Wait(); err != nil {
 		return 0, fmt.Errorf("imap login: %w (need Gmail app password)", err)
 	}
-	defer client.Logout().Wait()
+	defer func() { _ = client.Logout().Wait() }()
 	if _, err := client.Select("INBOX", nil).Wait(); err != nil {
 		return 0, fmt.Errorf("imap select: %w", err)
 	}
@@ -63,7 +63,7 @@ func PollOnce(ctx context.Context, sqldb *sql.DB, cfg PollConfig) (int, error) {
 		},
 	}
 	fetchCmd := client.Fetch(uids, fetchOpts)
-	defer fetchCmd.Close()
+	defer func() { _ = fetchCmd.Close() }()
 	stored := 0
 	for {
 		data := fetchCmd.Next()

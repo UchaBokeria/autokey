@@ -46,7 +46,7 @@ func PendingFor(ctx context.Context, sqldb *sql.DB, recipient string) ([]string,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []string
 	for rows.Next() {
 		var e string
@@ -78,7 +78,7 @@ func VerifyKripiWebhook(secret, timestamp, sigHeader string, body []byte, now ti
 		return fmt.Errorf("missing v1 signature")
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	fmt.Fprintf(mac, "%s.%s", timestamp, string(body))
+	_, _ = fmt.Fprintf(mac, "%s.%s", timestamp, string(body))
 	expected := mac.Sum(nil)
 	got, err := hex.DecodeString(v1)
 	if err != nil {

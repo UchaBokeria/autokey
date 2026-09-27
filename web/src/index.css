@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+  --color-neon-pink: #ff2ea6;
+  --color-neon-cyan: #00e5ff;
+  --color-neon-lime: #b6ff00;
+  --color-warn-amber: #ffb000;
+  --color-err-red: #ff3b3b;
+  --color-void: #0a0a12;
+  --color-panel: #12121c;
+  --color-edge: #23232f;
+}
+
+body {
+  background: var(--color-void);
+  color: #e8e8f0;
+}
+
+.font-terminal {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}

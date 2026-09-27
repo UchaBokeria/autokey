@@ -130,7 +130,7 @@ func PromptCardNumber(prompt string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("raw terminal: %w", err)
 	}
-	defer term.Restore(fd, oldState)
+	defer func() { _ = term.Restore(fd, oldState) }()
 
 	var digits []rune
 	redraw := func() {

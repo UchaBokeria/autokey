@@ -11,7 +11,7 @@ func TestMigrationsFresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sqldb.Close()
+	defer func() { _ = sqldb.Close() }()
 	var v int
 	if err := sqldb.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&v); err != nil {
 		t.Fatal(err)
@@ -83,7 +83,7 @@ func TestMigrationsUpgradeV1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer second.Close()
+	defer func() { _ = second.Close() }()
 	var kripi, onramp string
 	_ = second.QueryRow(`SELECT provider FROM cards WHERE card_id='MR_old'`).Scan(&kripi)
 	_ = second.QueryRow(`SELECT provider FROM cards WHERE card_id='chkr_old'`).Scan(&onramp)

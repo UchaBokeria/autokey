@@ -33,7 +33,7 @@ func LatestOTP(ctx context.Context, sqldb *sql.DB, recipient, since string) (OTP
 	if err != nil {
 		return OTPResult{}, false, fmt.Errorf("query inbound: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var r OTPResult
 		var text, html string

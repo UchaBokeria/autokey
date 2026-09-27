@@ -81,3 +81,38 @@ Codes are extracted from subject + text + HTML with OTP-context
 scoring (4–8 digits near verification wording); only mail received
 after the wait starts counts, so stale codes never match.
 
+## Web dashboard
+
+```sh
+autokey dashboard                  # :8766 by default (hook.port+1)
+autokey dashboard --port 9000
+```
+
+Same bearer as the hook (`HOOK_BEARER`, header or `?token=`).
+Tabs: Overview · Cards (per-service stats, custom remove) · Keys
+(requests + key drill-down) · Inbox (filter, full message) · OTP
+lookup · Onramp stock · Logs. Single binary: the SPA is embedded
+via `go:embed`; rebuild it with `make web` (needs node).
+
+## One-shot commands
+
+Every CLI command maps 1:1 to one function — nothing hidden:
+
+| command | function |
+|---|---|
+| `email mint` | `pool.CreateUniqueEmailUser` (+ reserve row) |
+| `keys generate` | `flow.GenerateDetails` |
+| `cards list` | `pool.ListPool` |
+| `cards create` | provider `Mint` + `pool.Register` |
+| `cards remote` | kripi `List` (account side) |
+| `cards add/remove/show` | custom `Add` / delete / `Secrets` |
+| `cards fund/details/freeze/delete` | kripi `Fund/Details/Freeze/Delete` |
+| `onramp stock/status` | `Stock` / `CheckStatus` |
+| `inbox list/otp` | queries + `mail.LatestOTP` / `WaitForOTP` |
+| `inbox watch` | `mail.PollOnce` loop |
+| `worker deploy/status` | upload + DNS + catch-all / read back |
+| `provider list/set-default` | registry + config hint |
+| `hook serve` | `hook.Server.Serve` |
+| `dashboard` | `dashboard.Server.Serve` |
+| `service install/uninstall/status/logs` | unit files + systemctl |
+

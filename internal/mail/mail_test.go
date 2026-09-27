@@ -14,7 +14,7 @@ func TestVerifyWebhook(t *testing.T) {
 	body := []byte(`{"id":"e1","type":"card.created"}`)
 	ts := fmt.Sprint(time.Now().Unix())
 	mac := hmac.New(sha256.New, []byte(secret))
-	fmt.Fprintf(mac, "%s.%s", ts, string(body))
+	_, _ = fmt.Fprintf(mac, "%s.%s", ts, string(body))
 	sig := "t=" + ts + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 	if err := VerifyKripiWebhook(secret, ts, sig, body, time.Now()); err != nil {
 		t.Fatal(err)
@@ -26,7 +26,7 @@ func TestVerifyWebhookReplay(t *testing.T) {
 	body := []byte(`{}`)
 	old := fmt.Sprint(time.Now().Add(-10 * time.Minute).Unix())
 	mac := hmac.New(sha256.New, []byte(secret))
-	fmt.Fprintf(mac, "%s.%s", old, string(body))
+	_, _ = fmt.Fprintf(mac, "%s.%s", old, string(body))
 	sig := "t=" + old + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 	if err := VerifyKripiWebhook(secret, old, sig, body, time.Now()); err == nil {
 		t.Fatal("want replay rejection")

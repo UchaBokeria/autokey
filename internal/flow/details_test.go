@@ -92,7 +92,7 @@ func TestGenerateDetailsPoolHit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sqldb.Close()
+	defer func() { _ = sqldb.Close() }()
 	if err := pool.Register(ctx, sqldb, "kripi", "MR_POOL", "1111", "539502", "autokey"); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestGenerateDetailsUnknownProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sqldb.Close()
+	defer func() { _ = sqldb.Close() }()
 	p := &fakeProducer{}
 	if _, err := GenerateDetails(ctx, testDeps(sqldb, fakeKripi(t, nil), p), "nope", 1); err == nil {
 		t.Fatal("want unknown-provider error")
@@ -133,7 +133,7 @@ func TestGenerateDetailsPoolFailThenMint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sqldb.Close()
+	defer func() { _ = sqldb.Close() }()
 	if err := pool.Register(ctx, sqldb, "kripi", "MR_DEAD", "2222", "539502", "autokey"); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestGenerateDetailsAllFail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sqldb.Close()
+	defer func() { _ = sqldb.Close() }()
 	p := &fakeProducer{failFor: map[string]bool{}}
 	_ = p
 	// Producer always fails: wrap to fail everything.
@@ -192,7 +192,7 @@ func TestGenerateDetailsCustomPoolOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sqldb.Close()
+	defer func() { _ = sqldb.Close() }()
 	cp := &custom.Provider{
 		DB:     sqldb,
 		Key:    func() string { return "test-key" },
@@ -229,7 +229,7 @@ func TestGenerateDetailsCustomPoolHit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sqldb.Close()
+	defer func() { _ = sqldb.Close() }()
 	cp := &custom.Provider{
 		DB:     sqldb,
 		Key:    func() string { return "test-key" },

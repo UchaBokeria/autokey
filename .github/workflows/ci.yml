@@ -17,5 +17,9 @@ jobs:
         run: CGO_ENABLED=0 go vet ./...
       - name: build static
         run: CGO_ENABLED=0 go build -o autokey .
+      - name: lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
       - name: test
-        run: go test ./internal/kripi/ ./internal/mail/ ./internal/pool/ ./internal/flow/
+        run: go test ./...

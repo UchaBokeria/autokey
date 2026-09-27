@@ -11,8 +11,10 @@ import (
 )
 
 // months maps month number to lowercase 3-letter abbreviation.
-var months = []string{"", "jan", "feb", "mar", "apr", "may", "jun",
-	"jul", "aug", "sep", "oct", "nov", "dec"}
+var months = []string{
+	"", "jan", "feb", "mar", "apr", "may", "jun",
+	"jul", "aug", "sep", "oct", "nov", "dec",
+}
 
 // Clock is injectable for tests.
 var Clock = time.Now
@@ -84,7 +86,7 @@ ORDER BY (COALESCE(s.ok_count,0)+1.0)/(COALESCE(s.ok_count,0)+COALESCE(s.fail_co
 	if err != nil {
 		return nil, fmt.Errorf("list pool: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []Card
 	for rows.Next() {
 		var c Card

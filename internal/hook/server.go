@@ -112,7 +112,7 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.DB.QueryContext(r.Context(),
 		`SELECT key_value FROM keys WHERE request_id=(SELECT id FROM requests WHERE email=?)`, detail.Email)
 	if err == nil {
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var k string
 			_ = rows.Scan(&k)

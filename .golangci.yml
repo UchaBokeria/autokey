@@ -1,18 +1,21 @@
-formatters:
-  enable:
-    - gofumpt
-    - goimports
+version: "2"
+# No formatters section: gofumpt/goimports via the v2 formatter pipeline
+# panic on go1.27 (same honnef buildir family). CI runs gofmt + gofumpt -l.
 linters:
+  # staticcheck/unused/unconvert/unparam disabled: honnef.co/go/tools
+  # v0.7.0 panics on go1.27 AST (buildir/nilness on stdlib internal/poll).
+  # Re-enable after upstream go1.27 support.
+  disable:
+    - staticcheck
+    - unused
+    - unconvert
+    - unparam
   enable:
     - errcheck
     - govet
     - ineffassign
-    - staticcheck
-    - unused
-    - gofumpt
     - gosec
     - misspell
-    - unconvert
     - whitespace
   settings:
     gosec:

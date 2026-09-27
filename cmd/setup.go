@@ -39,28 +39,31 @@ var setupCmd = &cobra.Command{
 				if err != nil {
 					// system dir may need sudo; fall back to user dir
 					home, _ := os.UserHomeDir()
-					f, err = os.Create(filepath.Join(home, ".local/share/bash-completion/completions/autokey"))
+					//nolint:gosec // user-owned completion dir
+				f, err = os.Create(filepath.Join(home, ".local/share/bash-completion/completions/autokey"))
 					if err != nil {
 						return err
 					}
 				}
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 				return rootCmd.GenBashCompletion(f)
 			case "fish":
+				//nolint:gosec // user-owned completion dir
 				_ = os.MkdirAll(dir, 0o755)
 				f, err := os.Create(filepath.Join(dir, "autokey.fish"))
 				if err != nil {
 					return err
 				}
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 				return rootCmd.GenFishCompletion(f, true)
 			case "zsh":
+				//nolint:gosec // user-owned completion dir
 				_ = os.MkdirAll(dir, 0o755)
 				f, err := os.Create(filepath.Join(dir, "_autokey"))
 				if err != nil {
 					return err
 				}
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 				return rootCmd.GenZshCompletion(f)
 			default:
 				return nil

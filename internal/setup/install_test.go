@@ -34,7 +34,7 @@ func TestTunnelUnitAndScript(t *testing.T) {
 		}
 	}
 	home := t.TempDir()
-	os.Setenv("HOME", home)
+	t.Setenv("HOME", home)
 	path, err := TunnelScriptPath(home)
 	if err != nil {
 		t.Fatal(err)

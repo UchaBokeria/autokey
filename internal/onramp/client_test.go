@@ -30,6 +30,7 @@ func mockAPI(t *testing.T, stockStatus string) *Client {
 				_, _ = w.Write([]byte(`{"error":"paypal_email required"}`))
 				return
 			}
+			//nolint:gosec // test fixture: provider name echoed into mock JSON, no browser involved
 			_, _ = w.Write([]byte(`{"redeem_id":"test_r1","amount":5.86,"payment_coin":"USDT",
 				"payment_instructions":"USDT Polygon only","network":"Polygon",
 				"card_value":"5.00","card_currency":"USD","card_type":"` + q.Get("provider") + `",

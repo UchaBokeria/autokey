@@ -24,6 +24,7 @@ func InstallSelf() error {
 		ui.Info("already installed at %s", dst)
 		return nil
 	}
+	//nolint:gosec // fixed argv: installs our own binary
 	cmd := exec.Command("sudo", "install", "-m", "0755", exe, dst)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -99,10 +100,12 @@ WantedBy=default.target
 // TunnelScriptPath writes the embedded tunnel script and returns its path.
 func TunnelScriptPath(home string) (string, error) {
 	dir := filepath.Join(home, ".config", "autokey")
+	//nolint:gosec // user config dir needs +x for traversal
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("mkdir autokey conf: %w", err)
 	}
 	path := filepath.Join(dir, "autokey-tunnel.sh")
+	//nolint:gosec // helper script must stay executable
 	if err := os.WriteFile(path, []byte(tunnelScript), 0o755); err != nil {
 		return "", fmt.Errorf("write tunnel script: %w", err)
 	}
@@ -117,10 +120,12 @@ func InstallService() error {
 		exe, _ = os.Executable()
 	}
 	unitDir := filepath.Join(home, ".config/systemd/user")
+	//nolint:gosec // systemd requires units world-readable
 	if err := os.MkdirAll(unitDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir units: %w", err)
 	}
 	unit := filepath.Join(unitDir, "autokey.service")
+	//nolint:gosec // systemd unit files are world-readable by design
 	if err := os.WriteFile(unit, []byte(ServiceUnit(exe, home)), 0o644); err != nil {
 		return fmt.Errorf("write unit: %w", err)
 	}
@@ -129,6 +134,7 @@ func InstallService() error {
 		return err
 	}
 	tunit := filepath.Join(unitDir, "autokey-tunnel.service")
+	//nolint:gosec // systemd unit files are world-readable by design
 	if err := os.WriteFile(tunit, []byte(TunnelUnit(scriptPath)), 0o644); err != nil {
 		return fmt.Errorf("write tunnel unit: %w", err)
 	}
@@ -137,6 +143,7 @@ func InstallService() error {
 		{"--user", "enable", "--now", "autokey.service"},
 		{"--user", "enable", "--now", "autokey-tunnel.service"},
 	} {
+		//nolint:gosec // args are fixed unit names, never user input
 		cmd := exec.Command("systemctl", args...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

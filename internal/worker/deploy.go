@@ -71,7 +71,7 @@ func (d Deps) do(ctx context.Context, method, path string, body io.Reader, conte
 	if err != nil {
 		return nil, fmt.Errorf("cloudflare %s %s: %w", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var out cfResp
 	if err := json.Unmarshal(data, &out); err != nil {

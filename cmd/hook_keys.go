@@ -9,6 +9,7 @@ import (
 	"github.com/uchabokeria/autokey/internal/flow"
 	"github.com/uchabokeria/autokey/internal/hook"
 	"github.com/uchabokeria/autokey/internal/mail"
+	"github.com/uchabokeria/autokey/internal/pool"
 	"github.com/uchabokeria/autokey/internal/ui"
 	"github.com/uchabokeria/autokey/internal/worker"
 )
@@ -18,8 +19,10 @@ var hookCmd = &cobra.Command{
 	Short: "Run the secure hook server",
 }
 
-var hookBind string
-var hookPort int
+var (
+	hookBind string
+	hookPort int
+)
 
 var hookServeCmd = &cobra.Command{
 	Use:   "serve",
@@ -65,7 +68,7 @@ var (
 
 var keysGenerateCmd = &cobra.Command{
 	Use:   "generate",
-	Short: "Run generateDetails + generateKeys + wireup",
+	Short: "Generate API keys: mint email + working card, create keys, print result",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		a, err := loadApp()
 		if err != nil {
@@ -110,6 +113,40 @@ var keysGenerateCmd = &cobra.Command{
 var inboxCmd = &cobra.Command{
 	Use:   "inbox",
 	Short: "Inbound email operations",
+}
+
+var emailCmd = &cobra.Command{
+	Use:   "email",
+	Short: "Unique email user operations",
+}
+
+var emailMintCmd = &cobra.Command{
+	Use:   "mint",
+	Short: "Mint one unique email user and reserve it (no card, no keys)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		a, err := loadApp()
+		if err != nil {
+			return err
+		}
+		defer a.close()
+		email, err := pool.CreateUniqueEmailUser(a.ctx, a.sqldb, a.cfg.Domain)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC().Format(time.RFC3339)
+		if _, err := a.sqldb.ExecContext(a.ctx, `
+INSERT INTO requests(id,email,service,key_quantity,provider,status,created_at,updated_at)
+VALUES(?,?,?,?,?,?,?,?)`, pool.UUID4(), email, "x", 0, "", "reserved", now, now); err != nil {
+			return fmt.Errorf("reserve email: %w", err)
+		}
+		if jsonOut {
+			raw, _ := json.Marshal(map[string]any{"email": email, "status": "reserved"})
+			fmt.Println(string(raw))
+			return nil
+		}
+		ui.Ok("minted %s (reserved)", email)
+		return nil
+	},
 }
 
 var inboxLimit int
@@ -189,7 +226,7 @@ var inboxListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var id, rcpt, from, subj, at string
 			_ = rows.Scan(&id, &rcpt, &from, &subj, &at)
@@ -356,6 +393,9 @@ func init() {
 	inboxOTPCmd.Flags().BoolVar(&otpLatest, "latest", false, "print newest stored code instead of waiting")
 	inboxCmd.AddCommand(inboxListCmd, inboxWatchCmd, inboxOTPCmd)
 	rootCmd.AddCommand(inboxCmd)
+
+	emailCmd.AddCommand(emailMintCmd)
+	rootCmd.AddCommand(emailCmd)
 
 	workerDeployCmd.Flags().String("account", "", "Cloudflare account ID (or CF_ACCOUNT_ID)")
 	workerDeployCmd.Flags().String("inbox-url", "", "autokey /v1/inbox URL (default bind:port)")
