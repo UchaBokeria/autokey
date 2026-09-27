@@ -13,12 +13,12 @@ import (
 
 var serviceCmd = &cobra.Command{
 	Use:   "service",
-	Short: "systemd user service (opt-in daemon)",
+	Short: "systemd user service (hook + tunnel ingress)",
 }
 
 var serviceInstallRealCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Install and enable systemd --user unit (opt-in)",
+	Short: "Install and enable systemd --user units (hook + ingress)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return setup.InstallService()
 	},

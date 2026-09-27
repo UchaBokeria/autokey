@@ -71,7 +71,7 @@ var setupCmd = &cobra.Command{
 				ui.Warn("service: %v", err)
 			}
 		} else {
-			ui.Info("service left disabled (default). Enable later: autokey service install")
+			ui.Info("service left disabled. Enable later: autokey service install")
 		}
 		ui.Ok("setup complete")
 		return nil

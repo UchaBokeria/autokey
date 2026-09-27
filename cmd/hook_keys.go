@@ -120,6 +120,61 @@ var (
 	watchPeriod int
 )
 
+var (
+	otpEmail   string
+	otpTimeout time.Duration
+	otpLatest  bool
+)
+
+var inboxOTPCmd = &cobra.Command{
+	Use:   "otp",
+	Short: "Read a one-time code for an email user (wait or latest)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		a, err := loadApp()
+		if err != nil {
+			return err
+		}
+		defer a.close()
+		if otpEmail == "" {
+			return fmt.Errorf("need --email user@domain")
+		}
+		if otpLatest {
+			r, ok, err := mail.LatestOTP(a.ctx, a.sqldb, otpEmail, "")
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return fmt.Errorf("no code found for %s", otpEmail)
+			}
+			printOTP(r)
+			return nil
+		}
+		if otpTimeout <= 0 {
+			otpTimeout = 2 * time.Minute
+		}
+		ui.Info("waiting up to %s for OTP to %s...", otpTimeout, otpEmail)
+		r, err := mail.WaitForOTP(a.ctx, a.sqldb, otpEmail, otpTimeout)
+		if err != nil {
+			return err
+		}
+		printOTP(r)
+		return nil
+	},
+}
+
+func printOTP(r mail.OTPResult) {
+	if jsonOut {
+		raw, _ := json.Marshal(map[string]any{
+			"email": r.Recipient, "code": r.Code,
+			"subject": r.Subject, "from": r.Sender, "received_at": r.ReceivedAt,
+		})
+		fmt.Println(string(raw))
+		return
+	}
+	ui.Ok("OTP for %s: %s", r.Recipient, r.Code)
+	ui.Dim("from=%s subj=%q at=%s", r.Sender, r.Subject, r.ReceivedAt)
+}
+
 var inboxListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List recent inbound emails",
@@ -296,7 +351,10 @@ func init() {
 	inboxWatchCmd.Flags().StringVar(&watchAddr, "addr", "", "Gmail address (default GMAIL_ADDRESS)")
 	inboxWatchCmd.Flags().BoolVar(&watchOnce, "once", false, "single poll then exit")
 	inboxWatchCmd.Flags().IntVar(&watchPeriod, "interval", 0, "seconds between polls (default config)")
-	inboxCmd.AddCommand(inboxListCmd, inboxWatchCmd)
+	inboxOTPCmd.Flags().StringVar(&otpEmail, "email", "", "email user to read the code for (required)")
+	inboxOTPCmd.Flags().DurationVar(&otpTimeout, "timeout", 2*time.Minute, "how long to wait for a new code")
+	inboxOTPCmd.Flags().BoolVar(&otpLatest, "latest", false, "print newest stored code instead of waiting")
+	inboxCmd.AddCommand(inboxListCmd, inboxWatchCmd, inboxOTPCmd)
 	rootCmd.AddCommand(inboxCmd)
 
 	workerDeployCmd.Flags().String("account", "", "Cloudflare account ID (or CF_ACCOUNT_ID)")

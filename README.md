@@ -50,6 +50,7 @@ curl -X POST http://127.0.0.1:8765/v1/generate \
 
 ## Persistent ingress
 
+`autokey setup` enables the service by default (confirm prompt).
 `autokey service install` enables two user units:
 
 - `autokey.service` — the hook (`Restart=always`).
@@ -61,4 +62,22 @@ curl -X POST http://127.0.0.1:8765/v1/generate \
     URL per restart, inbox Worker auto-repointed via `worker deploy`.
 
 Both survive reboots (linger + `WantedBy=default.target`).
+Turn it off with `autokey service uninstall`; back on with
+`autokey service install`.
+
+## Reading one-time codes
+
+```sh
+# wait up to 2m (default) for a fresh code to an email user
+autokey inbox otp --email jun01032026-a3f9@my.com
+# longer wait, or just print the newest stored code
+autokey inbox otp --email jun01032026-a3f9@my.com --timeout 5m
+autokey inbox otp --email jun01032026-a3f9@my.com --latest
+# machine-readable
+autokey inbox otp --email jun01032026-a3f9@my.com --json
+```
+
+Codes are extracted from subject + text + HTML with OTP-context
+scoring (4–8 digits near verification wording); only mail received
+after the wait starts counts, so stale codes never match.
 

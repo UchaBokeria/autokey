@@ -109,7 +109,7 @@ func TunnelScriptPath(home string) (string, error) {
 	return path, nil
 }
 
-// InstallService writes + enables the hook and tunnel units. Opt-in only.
+// InstallService writes + enables the hook and tunnel units.
 func InstallService() error {
 	home, _ := os.UserHomeDir()
 	exe := "/usr/local/bin/autokey"

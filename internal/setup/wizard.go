@@ -36,7 +36,7 @@ func Wizard() (Answers, error) {
 	a := Answers{
 		BIN: "539502", Amount: 20, Bind: "127.0.0.1",
 		Provider: "", OnrampProd: "mastercard",
-		InstallBin: true, WalletAlert: 50,
+		InstallBin: true, EnableSvc: true, WalletAlert: 50,
 	}
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -70,7 +70,7 @@ func Wizard() (Answers, error) {
 			huh.NewInput().Title("Default mint BIN (kripi)").Value(&a.BIN),
 			huh.NewInput().Title("Bind address (default localhost)").Value(&a.Bind),
 			huh.NewConfirm().Title("Install to /usr/local/bin?").Value(&a.InstallBin),
-			huh.NewConfirm().Title("Enable systemd --user service? (default off)").Value(&a.EnableSvc),
+			huh.NewConfirm().Title("Enable systemd --user service? (default on)").Value(&a.EnableSvc),
 		),
 	)
 	if err := form.Run(); err != nil {
