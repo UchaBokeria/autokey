@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+	"github.com/uchabokeria/autokey/internal/automate"
+	"github.com/uchabokeria/autokey/internal/browser"
+	"github.com/uchabokeria/autokey/internal/browserflow"
 	"github.com/uchabokeria/autokey/internal/config"
 	"github.com/uchabokeria/autokey/internal/custom"
 	"github.com/uchabokeria/autokey/internal/db"
@@ -122,10 +125,59 @@ func (a *app) providerNames() string {
 }
 
 func (a *app) flowDeps() flow.Deps {
+	return a.flowDepsWith(nil)
+}
+
+// runOverrides carries per-command browserFlow overrides (flags beat config).
+type runOverrides struct {
+	Proxy   *string
+	Captcha *string
+}
+
+func (a *app) flowDepsWith(ov *runOverrides) flow.Deps {
+	sec := secretsFromFile(a.paths.Secrets)
+	captchaSrc := a.cfg.Browserflow.CaptchaStrategy
+	proxySrc := a.cfg.Browser.ProxyURL
+	if ov != nil {
+		if ov.Captcha != nil && *ov.Captcha != "" {
+			captchaSrc = *ov.Captcha
+		}
+		if ov.Proxy != nil && *ov.Proxy != "" {
+			proxySrc = *ov.Proxy
+		}
+	}
+	strategy, err := browserflow.ParseCaptchaStrategy(captchaSrc)
+	if err != nil {
+		strategy = browserflow.CaptchaPause
+	}
+	home, _ := os.UserHomeDir()
+	prod := &automate.Adapter{
+		DB:     a.sqldb,
+		Driver: &browser.PlaywrightDriver{},
+		BaseURL: func() string {
+			if s, ok := a.cfg.Services["omegameta"]; ok {
+				return s.BaseURL
+			}
+			return ""
+		}(),
+		Proxy:   proxySrc,
+		Captcha: strategy,
+		Key:     func() string { return sec["CUSTOM_CARD_KEY"] },
+		Now:     time.Now,
+		RunDir: func(req string) string {
+			return home + "/.autoApiKeys/runs/" + req
+		},
+		ProfileDir: func(req string) string {
+			return home + "/.autoApiKeys/profiles/" + req
+		},
+		Log: func(reqID, step string, ms int64, ok bool, detail string) {
+			_ = browserflow.LogStep(a.ctx, a.sqldb, time.Now, reqID, step, ms, ok, detail)
+		},
+	}
 	return flow.Deps{
 		DB:        a.sqldb,
 		Providers: a.providers(),
-		Producer:  flow.StubProducer{},
+		Producer:  prod,
 		Domain:    a.cfg.Domain,
 		Service:   "x",
 		Mint: provider.MintParams{

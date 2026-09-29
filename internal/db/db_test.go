@@ -16,8 +16,8 @@ func TestMigrationsFresh(t *testing.T) {
 	if err := sqldb.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&v); err != nil {
 		t.Fatal(err)
 	}
-	if v != 3 {
-		t.Fatalf("want schema version 3, got %d", v)
+	if v != 4 {
+		t.Fatalf("want schema version 4, got %d", v)
 	}
 	for _, col := range [][2]string{{"cards", "provider"}, {"requests", "provider"}} {
 		var n int
@@ -37,6 +37,24 @@ func TestMigrationsFresh(t *testing.T) {
 	if cc != 1 {
 		t.Fatal("want custom_cards table")
 	}
+	for _, tbl := range []string{"request_accounts", "request_steps"} {
+		var n int
+		if err := sqldb.QueryRow(
+			`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, tbl).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Fatalf("want %s table", tbl)
+		}
+	}
+	var ccountry int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('custom_cards') WHERE name='country'`).Scan(&ccountry); err != nil {
+		t.Fatal(err)
+	}
+	if ccountry != 1 {
+		t.Fatal("want country column on custom_cards")
+	}
 }
 
 // Legacy v1 DBs (no provider columns) must migrate cleanly.
@@ -51,6 +69,8 @@ func TestMigrationsUpgradeV1(t *testing.T) {
 		`DELETE FROM schema_migrations WHERE version>=2`,
 		`ALTER TABLE cards DROP COLUMN provider`,
 		`ALTER TABLE requests DROP COLUMN provider`,
+		`DROP TABLE IF EXISTS request_accounts`,
+		`DROP TABLE IF EXISTS request_steps`,
 	} {
 		if _, err := sqldb.ExecContext(ctx, q); err != nil {
 			t.Skipf("sqlite too old for DROP COLUMN: %v", err)
@@ -73,6 +93,9 @@ func TestMigrationsUpgradeV1(t *testing.T) {
 		 VALUES('MR_old','1111','539502','a','active',0,'t')`,
 		`ALTER TABLE cards DROP COLUMN provider`,
 		`ALTER TABLE requests DROP COLUMN provider`,
+		`ALTER TABLE custom_cards DROP COLUMN country`,
+		`DROP TABLE IF EXISTS request_accounts`,
+		`DROP TABLE IF EXISTS request_steps`,
 	} {
 		if _, err := first.ExecContext(ctx, q); err != nil {
 			t.Skipf("sqlite too old for DROP COLUMN: %v", err)

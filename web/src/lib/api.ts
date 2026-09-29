@@ -107,6 +107,8 @@ export const api = {
   requests: (limit = 100) => get<{ requests: KeyRequest[] }>(`/api/requests?limit=${limit}`),
   requestKeys: (id: string) => get<{ keys: string[] }>(`/api/requests/${id}/keys`),
   requestEmail: (id: string) => get<{ email: string }>(`/api/requests/${id}/email`),
+  requestSteps: (id: string) => get<{ steps: StepRow[] }>(`/api/requests/${id}/steps`),
+  requestAccount: (id: string) => get<RequestAccount>(`/api/requests/${id}/account`),
   inbox: (limit = 100, recipient = '') =>
     get<{ emails: InboxEmail[] }>(
       `/api/inbox?limit=${limit}${recipient ? `&recipient=${recipient}` : ''}`,
@@ -118,6 +120,20 @@ export const api = {
   removeCustom: (id: string) => del(`/api/cards-custom/${id}`),
   logs: (lines = 100) => get<{ lines: string[] }>(`/api/logs?lines=${lines}`),
 };
+
+export interface StepRow {
+  step: string
+  ok: boolean
+  detail: string
+  at: string
+}
+
+export interface RequestAccount {
+  password: string
+  dob: string
+  country: string
+  otp_used: boolean
+}
 
 export function setToken(t: string) {
   localStorage.setItem('autokey-token', t)

@@ -33,15 +33,24 @@ func HomePaths() (Paths, error) {
 
 // Config mirrors spec §3 (PROPOSED, frozen at build).
 type Config struct {
-	Domain      string  `mapstructure:"domain"`
-	EmailFormat string  `mapstructure:"email_format"`
-	Provider    string  `mapstructure:"provider"` // display hint only; never implicit (no default provider; kripi|onramp|custom)
-	Hook        Hook    `mapstructure:"hook"`
-	Kripi       Kripi   `mapstructure:"kripi"`
-	Onramp      Onramp  `mapstructure:"onramp"`
-	Cloudflare  CF      `mapstructure:"cloudflare"`
-	Poller      Poller  `mapstructure:"poller"`
-	WalletAlert float64 `mapstructure:"wallet_alert_usd"`
+	Domain      string             `mapstructure:"domain"`
+	EmailFormat string             `mapstructure:"email_format"`
+	Provider    string             `mapstructure:"provider"` // display hint only; never implicit (no default provider; kripi|onramp|custom)
+	Hook        Hook               `mapstructure:"hook"`
+	Kripi       Kripi              `mapstructure:"kripi"`
+	Onramp      Onramp             `mapstructure:"onramp"`
+	Services    map[string]Service `mapstructure:"services"`
+	Browserflow Browserflow        `mapstructure:"browserflow"`
+	Browser     Browser            `mapstructure:"browser"`
+	Cloudflare  CF                 `mapstructure:"cloudflare"`
+	Poller      Poller             `mapstructure:"poller"`
+	WalletAlert float64            `mapstructure:"wallet_alert_usd"`
+}
+
+// Service is one automation target profile (omegameta first).
+// BaseURL is the service origin — config per environment, never code.
+type Service struct {
+	BaseURL string `mapstructure:"base_url"`
 }
 
 // Hook holds the hook server security matrix.
@@ -80,6 +89,20 @@ type Poller struct {
 	Interval int  `mapstructure:"interval_sec"`
 }
 
+// Browserflow holds automation framework settings (grand-plan #1).
+type Browserflow struct {
+	// MaxParallel caps concurrent browser runs (default 1; raise deliberately).
+	MaxParallel int `mapstructure:"max_parallel"`
+	// CaptchaStrategy: pause-manual (default) | abort-quarantine | backoff-retry.
+	CaptchaStrategy string `mapstructure:"captcha_strategy"`
+}
+
+// Browser holds optional residential egress for browser traffic only.
+// API/mail/direct stay direct. Empty ProxyURL disables.
+type Browser struct {
+	ProxyURL string `mapstructure:"proxy_url"`
+}
+
 // Defaults returns the default configuration.
 func Defaults() Config {
 	return Config{
@@ -103,6 +126,7 @@ func Defaults() Config {
 		},
 		Cloudflare:  CF{WorkerName: "autokey-inbox"},
 		Poller:      Poller{Enabled: true, Interval: 60},
+		Browserflow: Browserflow{MaxParallel: 1, CaptchaStrategy: "pause-manual"},
 		WalletAlert: 50,
 	}
 }

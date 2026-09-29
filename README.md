@@ -115,4 +115,26 @@ Every CLI command maps 1:1 to one function — nothing hidden:
 | `hook serve` | `hook.Server.Serve` |
 | `dashboard` | `dashboard.Server.Serve` |
 | `service install/uninstall/status/logs` | unit files + systemctl |
+| `browser install` | playwright driver download (one-time) |
+| `services domain [name] [url]` | show/set service base URL |
+
+## Browser automation (#1)
+
+Per-request headless runs: signup (password-default, OTP fallback) →
+billing → keys. Service profiles carry their own base URL:
+
+```sh
+autokey browser install            # one-time playwright driver
+autokey services domain omegameta https://host   # dev host now, prod later
+autokey cards add --label mine --country US       # billing country, default US
+autokey keys generate --provider custom --qty 1 \
+  --proxy http://user:pass@host:port \            # optional residential egress
+  --captcha-strategy pause-manual                 # or abort-quarantine|backoff-retry
+```
+
+Long runs: `POST /v1/generate {"async":true}` → `202 {request_id}`,
+poll `GET /v1/requests/{id}`, or stream `{"stream":true}` (SSE step
+events). Per-step logs land in `request_steps` (dashboard Keys tab);
+account passwords are AES-256-GCM sealed per request. CAPTCHAs are
+never solved — pause (default), abort-quarantine, or backoff-retry.
 

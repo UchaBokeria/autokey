@@ -5,3 +5,7 @@ secrets.env
 logs/
 dist/
 /tmp/
+# session artifacts (chat dumps, scraped pages) — never commit, may hold secrets
+lastchat.json
+session-*.md
+localplatform/

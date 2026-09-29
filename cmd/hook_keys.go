@@ -60,10 +60,13 @@ var keysCmd = &cobra.Command{
 }
 
 var (
-	keyEmail    string
-	keyCard     string
-	keyQty      int
-	keyProvider string
+	keyEmail       string
+	keyCard        string
+	keyQty         int
+	keyProvider    string
+	keyProxy       string
+	keyCaptcha     string
+	keyMaxParallel int
 )
 
 var keysGenerateCmd = &cobra.Command{
@@ -75,7 +78,7 @@ var keysGenerateCmd = &cobra.Command{
 			return err
 		}
 		defer a.close()
-		deps := a.flowDeps()
+		deps := a.flowDepsWith(&runOverrides{Proxy: &keyProxy, Captcha: &keyCaptcha})
 		prov, providerName, err := a.resolveProvider(keyProvider)
 		if err != nil {
 			return err
@@ -381,6 +384,9 @@ func init() {
 	keysGenerateCmd.Flags().StringVar(&keyCard, "card", "", "card ID for explicit mode")
 	keysGenerateCmd.Flags().IntVarP(&keyQty, "qty", "n", 1, "keyQuantity 1..100")
 	keysGenerateCmd.Flags().StringVar(&keyProvider, "provider", "", "card provider kripi|onramp|custom (required)")
+	keysGenerateCmd.Flags().StringVar(&keyProxy, "proxy", "", "residential proxy URL for browser traffic (default browser.proxy_url)")
+	keysGenerateCmd.Flags().StringVar(&keyCaptcha, "captcha-strategy", "", "pause-manual|abort-quarantine|backoff-retry (default config)")
+	keysGenerateCmd.Flags().IntVar(&keyMaxParallel, "max-parallel", 0, "cap concurrent browser runs (default config, 1 = serial)")
 	keysCmd.AddCommand(keysGenerateCmd)
 	rootCmd.AddCommand(keysCmd)
 

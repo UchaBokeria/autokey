@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uchabokeria/autokey/internal/automate"
 	"github.com/uchabokeria/autokey/internal/flow"
 )
 
@@ -93,6 +94,11 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		KeyQuantity int    `json:"keyQuantity"`
 		Provider    string `json:"provider"`
+		Service     string `json:"service"`
+		Async       bool   `json:"async"`
+		Stream      bool   `json:"stream"`
+		Proxy       string `json:"proxy"`
+		Captcha     string `json:"captcha"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"success": false, "message": "invalid JSON"})
@@ -102,7 +108,11 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"success": false, "message": "keyQuantity must be 1..100"})
 		return
 	}
-	detail, err := flow.GenerateDetails(r.Context(), s.Deps, req.Provider, req.KeyQuantity)
+	if req.Async || req.Stream {
+		s.generateAsync(w, r, req.Provider, req.Service, req.KeyQuantity, req.Stream, req.Proxy, req.Captcha)
+		return
+	}
+	detail, err := flow.GenerateDetails(automate.WithOverrides(r.Context(), req.Proxy, req.Captcha), s.Deps, req.Provider, req.KeyQuantity)
 	if err != nil {
 		s.log("warn", "generate failed: "+err.Error())
 		writeJSON(w, http.StatusBadGateway, map[string]any{"success": false, "message": err.Error()})
@@ -168,7 +178,10 @@ func (s *Server) Serve(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/generate", s.generate)
 	mux.HandleFunc("/v1/inbox", s.inbox)
+	mux.HandleFunc("/v1/requests/", s.requestDetail)
 	addr := fmt.Sprintf("%s:%d", s.Bind, s.Port)
+	// No WriteTimeout: the /v1/generate stream route holds connections
+	// open for minutes (SSE). ReadHeaderTimeout stays as slow-loris guard.
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()

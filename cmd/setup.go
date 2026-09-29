@@ -40,7 +40,7 @@ var setupCmd = &cobra.Command{
 					// system dir may need sudo; fall back to user dir
 					home, _ := os.UserHomeDir()
 					//nolint:gosec // user-owned completion dir
-				f, err = os.Create(filepath.Join(home, ".local/share/bash-completion/completions/autokey"))
+					f, err = os.Create(filepath.Join(home, ".local/share/bash-completion/completions/autokey"))
 					if err != nil {
 						return err
 					}

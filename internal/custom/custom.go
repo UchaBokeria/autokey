@@ -39,6 +39,9 @@ type CardInput struct {
 	Expiry     string
 	CVV        string
 	NameOnCard string
+	// Country is the billing country (ISO-2, default US). Stored
+	// plaintext in custom_cards.country for the billing step.
+	Country string
 }
 
 // Error is a custom-provider failure. Adds are local, so failures are
@@ -164,6 +167,15 @@ func Validate(in CardInput) error {
 	return nil
 }
 
+// normalizeCountry uppercases and defaults blank to US.
+func normalizeCountry(c string) string {
+	c = strings.ToUpper(strings.TrimSpace(c))
+	if c == "" {
+		return "US"
+	}
+	return c
+}
+
 // normalizeExpiry accepts MM/YY, MM-YY, MM.YY, MMYY, MM/YYYY and
 // returns canonical MM/YY. Years map 00-99; four-digit years take mod 100.
 func normalizeExpiry(exp string) (string, error) {
@@ -256,6 +268,69 @@ func binOf(num string) string {
 // deriveKey stretches the CUSTOM_CARD_KEY passphrase with PBKDF2-SHA256.
 func deriveKey(passphrase string, salt []byte, iterations int) []byte {
 	return pbkdf2.Key([]byte(passphrase), salt, iterations, 32, sha256.New)
+}
+
+// EncryptBlob seals verbatim parts joined by "|" with AES-256-GCM.
+// Unlike EncryptSecrets it applies no PAN normalization — for secrets
+// like passwords that must round-trip exactly.
+func EncryptBlob(passphrase string, parts ...string) (blob, salt string, iterations int, err error) {
+	if passphrase == "" {
+		return "", "", 0, &Error{Message: "CUSTOM_CARD_KEY is not set"}
+	}
+	saltBytes := make([]byte, 16)
+	if _, err := rand.Read(saltBytes); err != nil {
+		return "", "", 0, fmt.Errorf("custom: rand: %w", err)
+	}
+	iterations = 210000
+	key := deriveKey(passphrase, saltBytes, iterations)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("custom: cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("custom: gcm: %w", err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", "", 0, fmt.Errorf("custom: nonce: %w", err)
+	}
+	sealed := gcm.Seal(nonce, nonce, []byte(strings.Join(parts, "|")), nil)
+	return base64.StdEncoding.EncodeToString(sealed),
+		base64.StdEncoding.EncodeToString(saltBytes), iterations, nil
+}
+
+// DecryptBlob opens a verbatim blob into its "|" parts.
+func DecryptBlob(passphrase, blob, salt string, iterations int) ([]string, error) {
+	if passphrase == "" {
+		return nil, &Error{Message: "CUSTOM_CARD_KEY is not set"}
+	}
+	sealed, err := base64.StdEncoding.DecodeString(blob)
+	if err != nil {
+		return nil, &Error{Message: "corrupt blob"}
+	}
+	saltBytes, err := base64.StdEncoding.DecodeString(salt)
+	if err != nil {
+		return nil, &Error{Message: "corrupt salt"}
+	}
+	key := deriveKey(passphrase, saltBytes, iterations)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("custom: cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("custom: gcm: %w", err)
+	}
+	if len(sealed) < gcm.NonceSize() {
+		return nil, &Error{Message: "corrupt blob"}
+	}
+	nonce, ct := sealed[:gcm.NonceSize()], sealed[gcm.NonceSize():]
+	plain, err := gcm.Open(nil, nonce, ct, nil)
+	if err != nil {
+		return nil, &Error{Message: "decrypt failed (wrong key?)"}
+	}
+	return strings.Split(string(plain), "|"), nil
 }
 
 // EncryptSecrets seals number|expiry|cvv with AES-256-GCM. Returns the
@@ -399,8 +474,8 @@ VALUES(?,?,?,?, 'custom','active',0,?)`,
 		return provider.CardRef{}, fmt.Errorf("custom: register: %w", err)
 	}
 	_, err = p.DB.ExecContext(ctx, `
-INSERT INTO custom_cards(card_id,enc_blob,salt,iterations,created_at)
-VALUES(?,?,?,?,?)`, id, blob, salt, iters, p.now())
+INSERT INTO custom_cards(card_id,enc_blob,salt,iterations,country,created_at)
+VALUES(?,?,?,?,?,?)`, id, blob, salt, iters, normalizeCountry(in.Country), p.now())
 	if err != nil {
 		_, _ = p.DB.ExecContext(ctx, `DELETE FROM cards WHERE card_id=?`, id)
 		return provider.CardRef{}, fmt.Errorf("custom: store secrets: %w", err)

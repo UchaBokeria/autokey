@@ -30,10 +30,12 @@ type Server struct {
 	LogFile string
 	Onramp  *onramp.Client
 	Version string
+	// CustomKey resolves CUSTOM_CARD_KEY for account decrypt (debugging).
+	CustomKey func() string
 }
 
 func (s *Server) api() *API {
-	return &API{DB: s.DB, Onramp: s.Onramp, Now: time.Now, Version: s.Version}
+	return &API{DB: s.DB, Onramp: s.Onramp, Now: time.Now, Version: s.Version, CustomKey: s.CustomKey}
 }
 
 func (s *Server) authorize(r *http.Request) bool {
@@ -153,6 +155,24 @@ func (s *Server) routes() *http.ServeMux {
 				return
 			}
 			ok(w, map[string]any{"email": email})
+			return
+		}
+		if strings.HasSuffix(rest, "/steps") {
+			out, err := api.RequestSteps(r.Context(), strings.TrimSuffix(rest, "/steps"))
+			if err != nil {
+				fail(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			ok(w, map[string]any{"steps": out})
+			return
+		}
+		if strings.HasSuffix(rest, "/account") {
+			out, err := api.RequestAccount(r.Context(), strings.TrimSuffix(rest, "/account"))
+			if err != nil {
+				fail(w, http.StatusNotFound, err.Error())
+				return
+			}
+			ok(w, out)
 			return
 		}
 		fail(w, http.StatusNotFound, "unknown request route")

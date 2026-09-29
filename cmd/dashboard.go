@@ -36,6 +36,9 @@ var dashboardCmd = &cobra.Command{
 			LogFile: a.paths.LogsDir + "/autokey.jsonl",
 			Onramp:  onramp.New(),
 			Version: version,
+			CustomKey: func() string {
+				return secretsFromFile(a.paths.Secrets)["CUSTOM_CARD_KEY"]
+			},
 		}
 		ui.Banner()
 		ui.Ok("dashboard on http://%s:%d (same bearer as hook)", bind, port)

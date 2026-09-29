@@ -31,7 +31,7 @@ func openTestDB(t *testing.T) *sql.DB {
 		  name_on_card TEXT NOT NULL,provider TEXT NOT NULL DEFAULT '',
 		  status TEXT NOT NULL DEFAULT 'active',claimed INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL)`,
 		`CREATE TABLE custom_cards(card_id TEXT PRIMARY KEY,enc_blob TEXT NOT NULL,
-		  salt TEXT NOT NULL,iterations INTEGER NOT NULL,created_at TEXT NOT NULL)`,
+		  salt TEXT NOT NULL,iterations INTEGER NOT NULL,country TEXT NOT NULL DEFAULT 'US',created_at TEXT NOT NULL)`,
 	} {
 		if _, err := db.Exec(q); err != nil {
 			t.Fatal(err)

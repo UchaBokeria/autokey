@@ -107,6 +107,7 @@ var (
 	customExpiry    string
 	customCVV       string
 	customName      string
+	customCountry   string
 )
 
 // promptIfEmpty asks on the TTY (masked for secrets) when a flag was omitted.
@@ -183,6 +184,7 @@ func runCardsAddCustom(cmd *cobra.Command, a *app) error {
 	}
 	ref, err := cp.Add(a.ctx, custom.CardInput{
 		Label: label, Number: number, Expiry: expiry, CVV: cvv, NameOnCard: name,
+		Country: customCountry,
 	})
 	if err != nil {
 		return err
@@ -444,6 +446,7 @@ func init() {
 	cardsCreateCmd.Flags().StringVar(&customExpiry, "expiry", "", "custom expiry MM/YY (prompted masked if omitted)")
 	cardsCreateCmd.Flags().StringVar(&customCVV, "cvv", "", "custom CVV (prompted masked if omitted)")
 	cardsCreateCmd.Flags().StringVar(&customName, "card-name", "", "custom cardholder name (default label)")
+	cardsCreateCmd.Flags().StringVar(&customCountry, "country", "", "custom billing country ISO-2 (default US)")
 	cardsCreateCmd.Flags().StringVar(&cardProduct, "product", "", "onramp product: visa|mastercard|paypal")
 	cardsCreateCmd.Flags().StringVar(&cardTicker, "ticker", "", "onramp deposit coin (default polygon/usdt)")
 	cardsCreateCmd.Flags().StringVar(&cardPayPalEmail, "paypal-email", "", "onramp paypal product email")
@@ -463,6 +466,7 @@ func init() {
 	cardsAddCmd.Flags().StringVar(&customExpiry, "expiry", "", "custom expiry MM/YY (prompted masked if omitted)")
 	cardsAddCmd.Flags().StringVar(&customCVV, "cvv", "", "custom CVV (prompted masked if omitted)")
 	cardsAddCmd.Flags().StringVar(&customName, "card-name", "", "custom cardholder name (default label)")
+	cardsAddCmd.Flags().StringVar(&customCountry, "country", "", "billing country ISO-2 (default US)")
 	cardsRemoveCmd.Flags().StringVar(&cardID, "id", "", "custom card ID")
 	cardsShowCmd.Flags().StringVar(&cardID, "id", "", "custom card ID")
 	cardsCmd.AddCommand(cardsListCmd, cardsCreateCmd, cardsAddCmd, cardsRemoveCmd, cardsShowCmd, cardsFundCmd, cardsDetailsCmd, cardsFreezeCmd, cardsDeleteCmd, cardsRemoteCmd)

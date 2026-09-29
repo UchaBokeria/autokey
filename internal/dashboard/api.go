@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uchabokeria/autokey/internal/custom"
 	"github.com/uchabokeria/autokey/internal/mail"
 	"github.com/uchabokeria/autokey/internal/onramp"
 	"github.com/uchabokeria/autokey/internal/pool"
@@ -21,6 +22,8 @@ type API struct {
 	Onramp  *onramp.Client
 	Now     func() time.Time
 	Version string
+	// CustomKey resolves CUSTOM_CARD_KEY for account decrypt (debugging).
+	CustomKey func() string
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -273,4 +276,51 @@ func (a *API) RemoveCustom(ctx context.Context, cardID string) error {
 		return fmt.Errorf("remove card: %w", err)
 	}
 	return nil
+}
+
+// RequestSteps returns the persisted per-step run log for a request.
+func (a *API) RequestSteps(ctx context.Context, requestID string) ([]map[string]any, error) {
+	rows, err := a.DB.QueryContext(ctx,
+		`SELECT step,ok,detail,created_at FROM request_steps WHERE request_id=? ORDER BY id`, requestID)
+	if err != nil {
+		return nil, fmt.Errorf("request steps: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := []map[string]any{}
+	for rows.Next() {
+		var step, detail, at string
+		var ok int
+		if err := rows.Scan(&step, &ok, &detail, &at); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{"step": step, "ok": ok != 0, "detail": detail, "at": at})
+	}
+	return out, rows.Err()
+}
+
+// RequestAccount decrypts a request's account bundle for debugging.
+// Auth-guarded like everything else; never cached client-side.
+func (a *API) RequestAccount(ctx context.Context, requestID string) (map[string]any, error) {
+	key := ""
+	if a.CustomKey != nil {
+		key = a.CustomKey()
+	}
+	var blob, salt, dob, country string
+	var iters, otp int
+	if err := a.DB.QueryRowContext(ctx,
+		`SELECT password_enc,salt,iterations,dob,country,otp_used FROM request_accounts WHERE request_id=?`,
+		requestID).Scan(&blob, &salt, &iters, &dob, &country, &otp); err != nil {
+		return nil, fmt.Errorf("no account for request")
+	}
+	parts, err := custom.DecryptBlob(key, blob, salt, iters)
+	if err != nil {
+		return nil, err
+	}
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("corrupt account bundle")
+	}
+	return map[string]any{
+		"password": parts[0], "dob": dob, "country": country,
+		"otp_used": otp != 0,
+	}, nil
 }

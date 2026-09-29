@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/charmbracelet/huh"
+	"github.com/uchabokeria/autokey/internal/browserflow"
 	"github.com/uchabokeria/autokey/internal/config"
 	"github.com/uchabokeria/autokey/internal/db"
 	"github.com/uchabokeria/autokey/internal/ui"
@@ -29,6 +30,9 @@ type Answers struct {
 	InstallBin  bool
 	EnableSvc   bool
 	WalletAlert float64
+	ProxyURL    string
+	Captcha     string
+	MaxParallel int
 }
 
 // Wizard runs the interactive first-run setup.
@@ -37,6 +41,7 @@ func Wizard() (Answers, error) {
 		BIN: "539502", Amount: 20, Bind: "127.0.0.1",
 		Provider: "", OnrampProd: "mastercard",
 		InstallBin: true, EnableSvc: true, WalletAlert: 50,
+		Captcha: "pause-manual", MaxParallel: 1,
 	}
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -69,12 +74,24 @@ func Wizard() (Answers, error) {
 			).Value(&a.OnrampProd),
 			huh.NewInput().Title("Default mint BIN (kripi)").Value(&a.BIN),
 			huh.NewInput().Title("Bind address (default localhost)").Value(&a.Bind),
+			huh.NewSelect[string]().Title("CAPTCHA recovery (browser automation)").Options(
+				huh.NewOption("Pause for manual solve (default)", "pause-manual"),
+				huh.NewOption("Abort + quarantine card", "abort-quarantine"),
+				huh.NewOption("Backoff retry (fresh profile/IP)", "backoff-retry"),
+			).Value(&a.Captcha),
+			huh.NewInput().Title("Residential proxy URL for browser traffic (optional, blank = direct)").Value(&a.ProxyURL),
 			huh.NewConfirm().Title("Install to /usr/local/bin?").Value(&a.InstallBin),
 			huh.NewConfirm().Title("Enable systemd --user service? (default on)").Value(&a.EnableSvc),
 		),
 	)
 	if err := form.Run(); err != nil {
 		return a, fmt.Errorf("wizard: %w", err)
+	}
+	if _, err := browserflow.ParseCaptchaStrategy(a.Captcha); err != nil {
+		return a, err
+	}
+	if a.MaxParallel < 1 {
+		a.MaxParallel = 1
 	}
 	return a, nil
 }
@@ -124,8 +141,13 @@ cloudflare:
 poller:
   gmail_fallback_enabled: true
   interval_sec: 60
+browserflow:
+  max_parallel: %d
+  captcha_strategy: "%s"
+browser:
+  proxy_url: "%s"
 wallet_alert_usd: %.2f
-`, a.Domain, a.Provider, a.Bind, a.BIN, a.Amount, a.OnrampProd, a.ZoneID, a.WalletAlert)
+`, a.Domain, a.Provider, a.Bind, a.BIN, a.Amount, a.OnrampProd, a.ZoneID, a.MaxParallel, a.Captcha, a.ProxyURL, a.WalletAlert)
 	if err := os.WriteFile(paths.ConfigFile, []byte(cfg), 0o600); err != nil {
 		return paths, fmt.Errorf("write config: %w", err)
 	}
